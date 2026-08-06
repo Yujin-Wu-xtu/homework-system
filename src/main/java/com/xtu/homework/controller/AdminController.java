@@ -6,7 +6,9 @@ import com.xtu.homework.common.R;
 import com.xtu.homework.dao.*;
 import com.xtu.homework.entity.*;
 import com.xtu.homework.service.QuestionService;
+import com.xtu.homework.service.QuestionAiService;
 import com.xtu.homework.service.UserService;
+import com.xtu.homework.util.TextExtractor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -32,6 +34,7 @@ public class AdminController {
     private final QuestionKnowledgeDao questionKnowledgeDao;
     private final QuestionOptionDao questionOptionDao;
     private final HomeworkQuestionDao homeworkQuestionDao;
+    private final QuestionAiService questionAiService;
 
     // ---- 首页统计 ----
     @GetMapping("/dashboard")
@@ -315,6 +318,33 @@ public class AdminController {
             return R.ok().data(questionService.importQuestionsFromExcel(file));
         } catch (Exception e) {
             return R.badRequest("导入失败: " + e.getMessage());
+        }
+    }
+
+    // ---- AI 出题（大模型生成题目草稿，管理员预览审核后走常规新增入库）----
+    @PostMapping("/questions/ai-generate")
+    public R aiGenerate(@RequestBody Map<String, Object> body) {
+        try {
+            String material = (String) body.get("material");
+            String type = (String) body.getOrDefault("type", "ESSAY");
+            int count = body.get("count") != null ? ((Number) body.get("count")).intValue() : 5;
+            String difficulty = (String) body.getOrDefault("difficulty", "MEDIUM");
+            return R.ok().data(questionAiService.generateDrafts(material, type, count, difficulty));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
+    }
+
+    @PostMapping("/questions/ai-generate/file")
+    public R aiGenerateFromFile(@RequestParam("file") MultipartFile file,
+                                @RequestParam(defaultValue = "ESSAY") String type,
+                                @RequestParam(defaultValue = "5") int count,
+                                @RequestParam(defaultValue = "MEDIUM") String difficulty) {
+        try {
+            String material = TextExtractor.extract(file);
+            return R.ok().data(questionAiService.generateDrafts(material, type, count, difficulty));
+        } catch (Exception e) {
+            return R.badRequest("材料提取失败: " + e.getMessage());
         }
     }
 

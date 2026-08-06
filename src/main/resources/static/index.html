@@ -91,6 +91,8 @@ const api = {
     checkDuplicate: d => axios.post('/api/admin/questions/check-duplicate', d),
     toggleQuestion: id => axios.put('/api/admin/questions/' + id + '/status'),
     importQuestions: file => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/questions/import', fd) },
+    aiGenerate: d => axios.post('/api/admin/questions/ai-generate', d),
+    aiGenerateFile: (file, p) => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/questions/ai-generate/file', fd, {params: p}) },
     // Admin - Knowledge Points
     knowledgePoints: k => axios.get('/api/admin/knowledge-points', {params: {keyword: k || ''}}),
     addKnowledgePoint: d => axios.post('/api/admin/knowledge-points', d),
@@ -348,6 +350,7 @@ const AdminQuestions = defineComponent({
             <el-upload :show-file-list="false" :before-upload="f=>uploadQuestions(f)" accept=".xlsx" style="display:inline-block;margin-left:8px">
                 <el-button type="success" size="small">批量导入Excel</el-button>
             </el-upload>
+            <el-button type="warning" size="small" style="margin-left:8px" @click="openAi">🤖 AI 生成</el-button>
             <span style="color:#909399;font-size:12px;margin-left:8px">模板列：题型(单选/多选/判断/问答)、题干、选项A、选项B、选项C、选项D、答案(客观题必填，问答题填参考答案)、难度、分值</span>
         </h3>
             <el-input v-model="keyword" placeholder="搜索题目" size="small" style="width:240px;margin-right:8px" clearable/>
@@ -397,6 +400,80 @@ const AdminQuestions = defineComponent({
                 </el-form>
                 <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
             </el-dialog>
+            <!-- AI 出题弹窗 -->
+            <el-dialog title="🤖 AI 生成题目" v-model="aiVisible" width="880px">
+                <template v-if="!aiDrafts.length">
+                    <el-alert type="info" :closable="false" style="margin-bottom:10px" title="上传课程资源或粘贴材料文本，AI 基于内容生成题目草稿（问答题含参考答案；选择/判断题的选项也由 AI 起草，最终由你审核确认后导入）"/>
+                    <el-form :inline="true">
+                        <el-form-item label="题型">
+                            <el-select v-model="aiType" size="small" style="width:130px">
+                                <el-option label="问答题（推荐）" value="ESSAY"/>
+                                <el-option label="单选题" value="SINGLE_CHOICE"/>
+                                <el-option label="多选题" value="MULTI_CHOICE"/>
+                                <el-option label="判断题" value="TRUE_FALSE"/>
+                                <el-option label="混合题型" value="ALL"/>
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item label="数量"><el-input-number v-model="aiCount" :min="1" :max="10" size="small"/></el-form-item>
+                        <el-form-item label="难度">
+                            <el-select v-model="aiDifficulty" size="small" style="width:110px">
+                                <el-option v-for="(v,k) in DIFF_MAP" :key="k" :label="v.label" :value="k"/>
+                            </el-select>
+                        </el-form-item>
+                    </el-form>
+                    <el-input v-model="aiMaterial" type="textarea" :rows="5" placeholder="粘贴课程材料文本（或从下方上传文件）"/>
+                    <el-upload :show-file-list="false" :before-upload="f=>aiUpload(f)" accept=".txt,.md,.docx,.pdf" style="margin-top:8px">
+                        <el-button size="small">上传课程资源（txt/md/docx/pdf）</el-button>
+                    </el-upload>
+                    <div style="margin-top:10px;text-align:right">
+                        <el-button type="primary" :loading="aiLoading" @click="aiRun">生成题目</el-button>
+                    </div>
+                </template>
+                <template v-else>
+                    <div style="margin-bottom:8px">
+                        <el-button size="small" @click="aiDrafts=[];aiMaterial=''">重新生成</el-button>
+                        <el-button size="small" type="success" :loading="aiImporting" @click="aiImport">导入选中（{{aiChecked.filter(Boolean).length}} 道）</el-button>
+                        <span style="color:#909399;font-size:12px;margin-left:8px">AI 生成仅供参考，请逐题审核后再导入（导入自动查重）</span>
+                    </div>
+                    <el-table :data="aiDrafts" border stripe max-height="420" @selection-change="rows=>{aiChecked = aiDrafts.map(d=>rows.includes(d))}">
+                        <el-table-column type="selection" width="40"/>
+                        <el-table-column prop="type" label="题型" width="90"><template #default="{row}">{{TYPE_MAP[row.type]||row.type}}</template></el-table-column>
+                        <el-table-column prop="content" label="题干" show-overflow-tooltip/>
+                        <el-table-column prop="knowledgePoint" label="知识点" width="110"/>
+                        <el-table-column prop="difficulty" label="难度" width="80"><template #default="{row}">{{DIFF_MAP[row.difficulty]?.label||row.difficulty}}</template></el-table-column>
+                        <el-table-column label="操作" width="80"><template #default="{row,$index}"><el-button size="small" @click="aiEdit(row,$index)">编辑</el-button></template></el-table-column>
+                    </el-table>
+                    <el-checkbox v-model="aiCheckAll" @change="v=>{aiChecked=aiDrafts.map(()=>v)}" style="margin-top:6px">全选</el-checkbox>
+                </template>
+            </el-dialog>
+            <!-- AI 草稿编辑弹窗 -->
+            <el-dialog title="编辑题目草稿" v-model="aiEditVisible" width="620px">
+                <el-form :model="aiEditForm" label-width="80px">
+                    <el-form-item label="题型">
+                        <el-select v-model="aiEditForm.type" style="width:100%"><el-option v-for="(v,k) in TYPE_MAP" :key="k" :label="v" :value="k"/></el-select>
+                    </el-form-item>
+                    <el-form-item label="题干"><el-input v-model="aiEditForm.content" type="textarea" :rows="3"/></el-form-item>
+                    <el-form-item label="标准答案" v-if="aiEditForm.type!=='ESSAY'"><el-input v-model="aiEditForm.correctAnswer"/></el-form-item>
+                    <el-form-item label="参考答案" v-if="aiEditForm.type==='ESSAY'"><el-input v-model="aiEditForm.referenceAnswer" type="textarea" :rows="3"/></el-form-item>
+                    <el-form-item label="选项" v-if="aiEditForm.type==='SINGLE_CHOICE'||aiEditForm.type==='MULTI_CHOICE'">
+                        <div v-for="(o,i) in aiEditForm.options" :key="i" style="margin-bottom:4px;display:flex;align-items:center;gap:8px">
+                            <el-input v-model="o.label" placeholder="标签" style="width:70px"/>
+                            <el-input v-model="o.content" placeholder="选项内容" style="flex:1"/>
+                            <el-button size="small" type="danger" @click="aiEditForm.options.splice(i,1)" circle>✕</el-button>
+                        </div>
+                        <el-button size="small" @click="aiEditForm.options.push({label:String.fromCharCode(65+aiEditForm.options.length),content:''})">添加选项</el-button>
+                    </el-form-item>
+                    <el-form-item label="知识点">
+                        <el-select v-model="aiEditForm.knowledgePoint" filterable allow-create default-first-option placeholder="选现有或输入新名称" style="width:100%">
+                            <el-option v-for="kp in kpList" :key="kp.id" :label="kp.name" :value="kp.name"/>
+                        </el-select>
+                    </el-form-item>
+                    <el-form-item label="难度">
+                        <el-select v-model="aiEditForm.difficulty" style="width:100%"><el-option v-for="(v,k) in DIFF_MAP" :key="k" :label="v.label" :value="k"/></el-select>
+                    </el-form-item>
+                </el-form>
+                <template #footer><el-button @click="aiEditVisible=false">完成</el-button></template>
+            </el-dialog>
         </div>`,
     setup() {
         const list = ref([]), keyword = ref(''), filterType = ref(''), filterDifficulty = ref(''), dialogVisible = ref(false), kpList = ref([]), isEdit = ref(false)
@@ -444,8 +521,70 @@ const AdminQuestions = defineComponent({
             }).catch(e => $m(e.response?.data?.msg||'导入失败','error'))
             return false
         }
+        // ========== AI 出题 ==========
+        const aiVisible = ref(false), aiType = ref('ESSAY'), aiCount = ref(5), aiDifficulty = ref('MEDIUM')
+        const aiMaterial = ref(''), aiDrafts = ref([]), aiLoading = ref(false), aiImporting = ref(false)
+        const aiChecked = ref([]), aiCheckAll = ref(false)
+        const aiEditVisible = ref(false), aiEditForm = reactive({type:'ESSAY',content:'',correctAnswer:'',referenceAnswer:'',options:[],knowledgePoint:'',difficulty:'MEDIUM'})
+        const openAi = () => { aiVisible.value = true; if (!aiDrafts.value.length) { aiMaterial.value = '' } }
+        const aiRun = async () => {
+            if (!aiMaterial.value || !aiMaterial.value.trim()) return $m('请先粘贴课程材料或上传文件','error')
+            aiLoading.value = true
+            try {
+                const r = await api.aiGenerate({material: aiMaterial.value, type: aiType.value, count: aiCount.value, difficulty: aiDifficulty.value})
+                aiDrafts.value = r.data.data || []
+                aiChecked.value = aiDrafts.value.map(() => true)
+                aiCheckAll.value = true
+                if (!aiDrafts.value.length) $m('AI 未生成题目，请调整材料或重试','warning')
+            } catch(e) { $m(e.response?.data?.msg||'AI 生成失败','error') } finally { aiLoading.value = false }
+        }
+        const aiUpload = file => {
+            api.aiGenerateFile(file, {type: aiType.value, count: aiCount.value, difficulty: aiDifficulty.value}).then(r => {
+                aiDrafts.value = r.data.data || []
+                aiChecked.value = aiDrafts.value.map(() => true)
+                aiCheckAll.value = true
+                $m(`AI 生成 ${aiDrafts.value.length} 道题目，请审核`)
+            }).catch(e => $m(e.response?.data?.msg||'AI 生成失败','error'))
+            return false
+        }
+        const aiEdit = (row, idx) => {
+            Object.assign(aiEditForm, {
+                type: row.type || 'ESSAY', content: row.content || '',
+                correctAnswer: row.correctAnswer || '', referenceAnswer: row.referenceAnswer || '',
+                options: (row.options || []).map(o => ({...o})), knowledgePoint: row.knowledgePoint || '',
+                difficulty: row.difficulty || 'MEDIUM'
+            })
+            aiEditForm._idx = idx
+            aiEditVisible.value = true
+        }
+        // 编辑弹窗关闭时写回草稿
+        watch(aiEditVisible, v => { if (!v && aiEditForm._idx != null) {
+            const i = aiEditForm._idx; const d = aiDrafts.value[i]
+            if (d) Object.assign(d, {type: aiEditForm.type, content: aiEditForm.content, correctAnswer: aiEditForm.correctAnswer, referenceAnswer: aiEditForm.referenceAnswer, options: aiEditForm.options.map(o=>({...o})), knowledgePoint: aiEditForm.knowledgePoint, difficulty: aiEditForm.difficulty})
+        }})
+        const aiImport = async () => {
+            const selected = aiDrafts.value.filter((d, i) => aiChecked.value[i])
+            if (!selected.length) return $m('请先勾选要导入的题目','error')
+            aiImporting.value = true
+            let ok = 0, skip = 0; const errs = []
+            for (const d of selected) {
+                try {
+                    const payload = { type: d.type, content: d.content, correctAnswer: d.correctAnswer, referenceAnswer: d.referenceAnswer, difficulty: d.difficulty, score: 5, knowledgePointIds: [] }
+                    if (d.type==='SINGLE_CHOICE'||d.type==='MULTI_CHOICE') payload.options = (d.options||[]).filter(o=>o.label&&o.content)
+                    if (d.knowledgePoint) { const kp = kpList.value.find(k=>k.name===d.knowledgePoint); if (kp) payload.knowledgePointIds = [kp.id] }
+                    const dup = await api.checkDuplicate({content: d.content, type: d.type})
+                    if ((dup.data.data||[]).length) { skip++; errs.push(`「${String(d.content).slice(0,18)}…」与题库重复，跳过`); continue }
+                    await api.addQuestion(payload); ok++
+                } catch(e) { errs.push(`「${String(d.content).slice(0,18)}…」${e.response?.data?.msg||'失败'}`) }
+            }
+            aiImporting.value = false
+            load()
+            const msg = `导入完成：成功 ${ok} 道，跳过重复 ${skip} 道，失败 ${errs.length} 道`
+            if (errs.length) ElementPlus.ElMessageBox.alert(msg + '\n' + errs.slice(0,5).join('\n'), 'AI 导入结果')
+            else $m(msg)
+        }
         onMounted(async () => { load(); try { const r = await api.knowledgePoints(); kpList.value = r.data.data } catch(e) { console.error(e) } })
-        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, load, toggle, del, showAdd, edit, save, uploadQuestions }
+        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, load, toggle, del, showAdd, edit, save, uploadQuestions, aiVisible, aiType, aiCount, aiDifficulty, aiMaterial, aiDrafts, aiLoading, aiImporting, aiChecked, aiCheckAll, aiEditVisible, aiEditForm, openAi, aiRun, aiUpload, aiEdit, aiImport }
     }
 })
 

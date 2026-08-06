@@ -48,3 +48,7 @@ jwt:
 
 knife4j:
   enable: true
+
+ai:
+  api-key: ${DEEPSEEK_API_KEY:}
+  model: ${DEEPSEEK_MODEL:deepseek-v4-flash}
