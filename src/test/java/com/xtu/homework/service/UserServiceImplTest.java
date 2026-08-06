@@ -2,6 +2,7 @@ package com.xtu.homework.service;
 
 import com.xtu.homework.HomeworkApplication;
 import com.xtu.homework.entity.User;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -53,6 +54,46 @@ class UserServiceImplTest {
     void testLoginNonExistentUser() {
         assertThrows(RuntimeException.class, () ->
                 userService.login("nobody_user_xyz", "Whatever123"));
+    }
+
+    @Test
+    @Order(15)
+    void testDeleteNonexistentStudent() {
+        assertThrows(RuntimeException.class, () -> userService.deleteStudent(99999L));
+    }
+
+    // ========== 个人中心（updateProfile）==========
+
+    @Test
+    @Order(19)
+    void testUpdateProfile() {
+        // 用初始学生 20240001（张三）改资料
+        User stu = userService.getOne(new LambdaQueryWrapper<User>().eq(User::getUsername, "20240001"));
+        assertNotNull(stu);
+        userService.updateProfile(stu.getId(), "张三丰", "13800138000", "zhangsan@xtu.edu.cn");
+        User after = userService.getById(stu.getId());
+        assertEquals("张三丰", after.getRealName());
+        assertEquals("13800138000", after.getPhone());
+        assertEquals("zhangsan@xtu.edu.cn", after.getEmail());
+        // 还原，避免影响其他用例
+        userService.updateProfile(stu.getId(), "张三", null, null);
+    }
+
+    @Test
+    @Order(20)
+    void testUpdateProfileBlankNameRejected() {
+        User stu = userService.getOne(new LambdaQueryWrapper<User>().eq(User::getUsername, "20240001"));
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> userService.updateProfile(stu.getId(), "  ", "1", null));
+        assertTrue(ex.getMessage().contains("姓名"));
+    }
+
+    @Test
+    @Order(21)
+    void testUpdateProfileNonexistentUser() {
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> userService.updateProfile(999999L, "x", null, null));
+        assertTrue(ex.getMessage().contains("不存在"));
     }
 
     // ========== 密码测试 ==========
@@ -177,12 +218,6 @@ class UserServiceImplTest {
         userService.deleteStudent(saved.getId());
         User after = userService.getById(saved.getId());
         assertEquals("DISABLED", after.getStatus(), "删除应为软删（禁用账号）");
-    }
-
-    @Test
-    @Order(15)
-    void testDeleteNonexistentStudent() {
-        assertThrows(RuntimeException.class, () -> userService.deleteStudent(99999L));
     }
 
     // ========== Excel 导入（列名匹配 + 排错）==========

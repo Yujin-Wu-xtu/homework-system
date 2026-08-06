@@ -105,6 +105,17 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
     }
 
     @Override
+    public void updateProfile(Long userId, String realName, String phone, String email) {
+        User user = userDao.selectById(userId);
+        if (user == null) throw new RuntimeException("用户不存在");
+        if (realName == null || realName.isBlank()) throw new RuntimeException("姓名不能为空");
+        user.setRealName(realName.trim());
+        user.setPhone(phone == null || phone.isBlank() ? null : phone.trim());
+        user.setEmail(email == null || email.isBlank() ? null : email.trim());
+        userDao.updateById(user);
+    }
+
+    @Override
     public String resetPassword(Long userId) {
         User user = userDao.selectById(userId);
         String newPwd = generateRandomPassword();

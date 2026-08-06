@@ -12,6 +12,7 @@ import java.util.Map;
 public interface UserService extends IService<User> {
     String login(String username, String password);
     void changePassword(Long userId, String oldPwd, String newPwd);
+    void updateProfile(Long userId, String realName, String phone, String email);
     String resetPassword(Long userId);
     Page<User> listTeachers(int page, int size, String keyword);
     User addTeacher(User teacher);

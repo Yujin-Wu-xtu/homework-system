@@ -45,6 +45,17 @@ public class AuthController {
         }
     }
 
+    @PutMapping("/profile")
+    public R updateProfile(@RequestBody Map<String, String> body,
+                           @RequestAttribute("userId") Long userId) {
+        try {
+            userService.updateProfile(userId, body.get("realName"), body.get("phone"), body.get("email"));
+            return R.ok("个人信息已更新");
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
+    }
+
     @GetMapping("/me")
     public R currentUser(@RequestAttribute("userId") Long userId,
                          @RequestAttribute("role") String role) {
@@ -54,6 +65,8 @@ public class AuthController {
                 "role", role,
                 "username", user.getUsername(),
                 "realName", user.getRealName(),
+                "phone", user.getPhone() == null ? "" : user.getPhone(),
+                "email", user.getEmail() == null ? "" : user.getEmail(),
                 "pwdResetRequired", user.getPwdResetRequired() != null && user.getPwdResetRequired()));
     }
 }

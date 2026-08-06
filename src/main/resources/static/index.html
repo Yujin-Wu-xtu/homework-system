@@ -61,6 +61,9 @@ const DIFF_MAP = {EASY:{label:'简单',type:'success'},MEDIUM:{label:'中等',ty
 
 const api = {
     login: d => axios.post('/api/auth/login', d),
+    profile: () => axios.get('/api/auth/me'),
+    updateProfile: d => axios.put('/api/auth/profile', d),
+    changePassword: d => axios.put('/api/auth/password', d),
     dashboard: () => axios.get('/api/admin/dashboard'),
     // Admin - Teachers
     teachers: p => axios.get('/api/admin/teachers', {params: p}),
@@ -988,6 +991,7 @@ const MainLayout = defineComponent({
                     <span style="color:#606266;margin-right:16px">{{ userInfo.realName || userInfo.username }}
                         <el-tag size="small" :type="roleTag">{{ roleLabel }}</el-tag>
                     </span>
+                    <el-button size="small" @click="openProfile">🧑‍💼 个人中心</el-button>
                     <el-button size="small" @click="logout">退出登录</el-button>
                 </div>
             </div>
@@ -1018,7 +1022,30 @@ const MainLayout = defineComponent({
                     <router-view @viewGrading="goGrading"></router-view>
                 </div>
             </div>
-        </div>`,
+        </div>
+        <!-- 个人中心弹窗（三角色共用）-->
+        <el-dialog title="🧑‍💼 个人中心" v-model="profileVisible" width="540px">
+            <el-tabs v-model="profileTab">
+                <el-tab-pane label="基本信息" name="info">
+                    <el-form :model="profileForm" label-width="80px">
+                        <el-form-item label="用户名"><el-input :model-value="userInfo.username" disabled/></el-form-item>
+                        <el-form-item label="姓名"><el-input v-model="profileForm.realName" placeholder="真实姓名"/></el-form-item>
+                        <el-form-item label="手机号"><el-input v-model="profileForm.phone" placeholder="选填"/></el-form-item>
+                        <el-form-item label="邮箱"><el-input v-model="profileForm.email" placeholder="选填"/></el-form-item>
+                        <el-form-item><el-button type="primary" @click="saveProfile">保存</el-button></el-form-item>
+                    </el-form>
+                </el-tab-pane>
+                <el-tab-pane label="修改密码" name="pwd">
+                    <el-form :model="pwdForm" label-width="90px">
+                        <el-form-item label="原密码"><el-input v-model="pwdForm.oldPassword" type="password" show-password/></el-form-item>
+                        <el-form-item label="新密码"><el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="至少8位，含大小写字母和数字"/></el-form-item>
+                        <el-form-item label="确认新密码"><el-input v-model="pwdForm.confirm" type="password" show-password/></el-form-item>
+                        <el-form-item><el-button type="primary" @click="savePwd">修改密码</el-button></el-form-item>
+                    </el-form>
+                </el-tab-pane>
+            </el-tabs>
+        </el-dialog>
+    </div>`,
     setup() {
         const router = useRouter()
         const route = useRoute()
@@ -1028,7 +1055,30 @@ const MainLayout = defineComponent({
         const roleLabel = computed(() => ({ADMIN:'管理员',TEACHER:'教师',STUDENT:'学生'}[role.value]||''))
         const logout = () => { localStorage.clear(); router.push('/login') }
         const goGrading = () => { router.push('/grading') }
-        return { userInfo, role, roleTag, roleLabel, route, logout, goGrading }
+        // 个人中心
+        const profileVisible = ref(false), profileTab = ref('info')
+        const profileForm = reactive({realName:'', phone:'', email:''})
+        const pwdForm = reactive({oldPassword:'', newPassword:'', confirm:''})
+        const openProfile = async () => {
+            profileVisible.value = true; profileTab.value = 'info'
+            Object.assign(profileForm, {realName: userInfo.realName||'', phone:'', email:''})
+            try { const r = await api.profile(); const d = r.data.data; Object.assign(profileForm, {realName:d.realName||'', phone:d.phone||'', email:d.email||''}) } catch(e) { console.error(e) }
+            Object.assign(pwdForm, {oldPassword:'', newPassword:'', confirm:''})
+        }
+        const saveProfile = async () => {
+            if (!profileForm.realName) return $m('姓名不能为空','error')
+            try {
+                await api.updateProfile(profileForm)
+                userInfo.realName = profileForm.realName
+                localStorage.setItem('userInfo', JSON.stringify(userInfo))
+                $m('个人信息已更新')
+            } catch(e) { $m(e.response?.data?.msg||'保存失败','error') }
+        }
+        const savePwd = async () => {
+            if (pwdForm.newPassword !== pwdForm.confirm) return $m('两次输入的新密码不一致','error')
+            try { await api.changePassword({oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword}); Object.assign(pwdForm,{oldPassword:'',newPassword:'',confirm:''}); $m('密码修改成功') } catch(e) { $m(e.response?.data?.msg||'修改失败','error') }
+        }
+        return { userInfo, role, roleTag, roleLabel, route, logout, goGrading, profileVisible, profileTab, profileForm, pwdForm, openProfile, saveProfile, savePwd }
     }
 })
 
