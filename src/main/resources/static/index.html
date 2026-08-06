@@ -548,6 +548,7 @@ const AdminQuestions = defineComponent({
         // 上传资源：成功提示 + 刷新列表（不自动触发生成）
         const materialUpload = file => {
             api.uploadMaterial(file).then(r => {
+                if (r.data.code !== 200) { $m(r.data.msg || '上传失败', 'error'); return }
                 $m(`上传成功：${r.data.data.fileName}`)
                 loadMaterials()
             }).catch(e => $m(e.response?.data?.msg || '上传失败', 'error'))
@@ -567,6 +568,7 @@ const AdminQuestions = defineComponent({
                 if (hasMaterial) payload.materialId = aiMaterialId.value
                 else payload.material = aiMaterial.value
                 const r = await api.aiGenerate(payload)
+                if (r.data.code !== 200) { $m(r.data.msg || 'AI 生成失败', 'error'); return }
                 aiDrafts.value = r.data.data || []
                 aiChecked.value = aiDrafts.value.map(() => true)
                 aiCheckAll.value = true
@@ -599,8 +601,11 @@ const AdminQuestions = defineComponent({
                     if (d.type==='SINGLE_CHOICE'||d.type==='MULTI_CHOICE') payload.options = (d.options||[]).filter(o=>o.label&&o.content)
                     if (d.knowledgePoint) { const kp = kpList.value.find(k=>k.name===d.knowledgePoint); if (kp) payload.knowledgePointIds = [kp.id] }
                     const dup = await api.checkDuplicate({content: d.content, type: d.type})
+                    if (dup.data.code !== 200) { errs.push(`「${String(d.content).slice(0,18)}…」${dup.data.msg||'查重失败'}`); continue }
                     if ((dup.data.data||[]).length) { skip++; errs.push(`「${String(d.content).slice(0,18)}…」与题库重复，跳过`); continue }
-                    await api.addQuestion(payload); ok++
+                    const rq = await api.addQuestion(payload)
+                    if (rq.data.code !== 200) { errs.push(`「${String(d.content).slice(0,18)}…」${rq.data.msg||'入库失败'}`); continue }
+                    ok++
                 } catch(e) { errs.push(`「${String(d.content).slice(0,18)}…」${e.response?.data?.msg||'失败'}`) }
             }
             aiImporting.value = false

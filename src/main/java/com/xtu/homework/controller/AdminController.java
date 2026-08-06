@@ -352,7 +352,8 @@ public class AdminController {
 
             AiMaterial m = new AiMaterial();
             m.setFileName(name);
-            m.setFilePath(target.getAbsolutePath());
+            // 存相对路径（data/ai-materials/xxx.pdf）：读取时按 user.dir 解析，Windows/WSL/Docker 均可用
+            m.setFilePath("data/ai-materials/" + storedName);
             m.setFileSize(file.getSize());
             m.setFileType(type);
             m.setUploaderId(userId);
@@ -376,7 +377,7 @@ public class AdminController {
         AiMaterial m = aiMaterialDao.selectById(id);
         if (m == null) return R.badRequest("资源不存在");
         try {
-            java.io.File f = new java.io.File(m.getFilePath());
+            java.io.File f = new java.io.File(m.getFilePath()).getAbsoluteFile();
             if (f.exists() && !f.delete()) {
                 // 文件删除失败不阻断（记录删除即可）
             }
@@ -395,7 +396,7 @@ public class AdminController {
                 Long materialId = ((Number) body.get("materialId")).longValue();
                 AiMaterial m = aiMaterialDao.selectById(materialId);
                 if (m == null) return R.badRequest("资源不存在或已被删除");
-                try (InputStream is = new java.io.FileInputStream(m.getFilePath())) {
+                try (InputStream is = new java.io.FileInputStream(new java.io.File(m.getFilePath()).getAbsoluteFile())) {
                     material = TextExtractor.extract(m.getFileName(), is.readAllBytes());
                 } catch (Exception e) {
                     return R.badRequest("资源文本提取失败: " + e.getMessage());
