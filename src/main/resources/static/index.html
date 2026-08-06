@@ -78,6 +78,7 @@
                         <el-menu-item index="knowledge"><span>📂</span> 知识点管理</el-menu-item>
                     </template>
                     <template v-if="role==='TEACHER'">
+                        <el-menu-item index="teachingClasses"><span>🏫</span> 教学班管理</el-menu-item>
                         <el-menu-item index="myHomeworks"><span>📄</span> 作业管理</el-menu-item>
                         <el-menu-item index="assignHw"><span>📝</span> 布置作业</el-menu-item>
                         <el-menu-item index="grading"><span>✅</span> 批改作业</el-menu-item>
@@ -153,6 +154,16 @@ const api = {
     // Admin - Students
     resetStudentPwd: id => axios.put('/api/admin/students/' + id + '/reset-pwd'),
     // Teacher
+    teacherClasses: p => axios.get('/api/teacher/classes', {params: p}),
+    teacherTeachingClasses: p => axios.get('/api/teacher/teaching-classes', {params: p}),
+    addTeachingClass: d => axios.post('/api/teacher/teaching-classes', d),
+    updateTeachingClass: (id, d) => axios.put('/api/teacher/teaching-classes/' + id, d),
+    deleteTeachingClass: id => axios.delete('/api/teacher/teaching-classes/' + id),
+    teachingClassDetail: id => axios.get('/api/teacher/teaching-classes/' + id),
+    teachingClassAddClasses: (id, d) => axios.post(`/api/teacher/teaching-classes/${id}/classes`, d),
+    teachingClassRemoveClass: (id, cid) => axios.delete(`/api/teacher/teaching-classes/${id}/classes/${cid}`),
+    teachingClassStudents: id => axios.get('/api/teacher/teaching-classes/' + id + '/students'),
+    resetTcStudentPwds: id => axios.put('/api/teacher/teaching-classes/' + id + '/reset-student-pwds'),
     teacherHomeworks: p => axios.get('/api/teacher/homeworks', {params: p}),
     assignHomework: d => axios.post('/api/teacher/homeworks', d),
     deleteHomework: id => axios.delete('/api/teacher/homeworks/' + id),
@@ -517,6 +528,95 @@ const AdminKnowledge = defineComponent({
     }
 })
 
+// ======== Teacher Teaching Classes ========
+const TeacherTeachingClasses = defineComponent({
+    template: `
+        <div class="section-card"><h3>教学班管理 <el-button type="primary" size="small" @click="showAdd">新建教学班</el-button></h3>
+            <el-table :data="list" border stripe>
+                <el-table-column prop="id" label="ID" width="60"/>
+                <el-table-column prop="name" label="教学班名称"/>
+                <el-table-column label="操作" width="360">
+                    <template #default="{row}">
+                        <el-button size="small" @click="manageClasses(row)">组建班级</el-button>
+                        <el-button size="small" @click="viewStudents(row)">学生</el-button>
+                        <el-button size="small" @click="edit(row)">编辑</el-button>
+                        <el-button size="small" type="danger" @click="del(row)">删除</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+            <el-dialog :title="isEdit?'编辑教学班':'新建教学班'" v-model="dialogVisible" width="420px">
+                <el-form :model="form" label-width="90px">
+                    <el-form-item label="名称"><el-input v-model="form.name" placeholder="如: 2024级数据结构教学班"/></el-form-item>
+                </el-form>
+                <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+            </el-dialog>
+            <el-dialog :title="'组建班级 - ' + (currentRow?.name||'')" v-model="classesVisible" width="640px">
+                <div style="display:flex;gap:8px;margin-bottom:8px">
+                    <el-select v-model="selectedClazzIds" multiple placeholder="选择要加入教学班的自然班级" style="flex:1">
+                        <el-option v-for="c in allClasses" :key="c.id" :label="c.name" :value="c.id"/>
+                    </el-select>
+                    <el-button type="primary" @click="addClasses">加入选中</el-button>
+                </div>
+                <el-table :data="tcClasses" border stripe max-height="260">
+                    <el-table-column prop="id" label="班级ID" width="80"/>
+                    <el-table-column prop="name" label="班级名称"/>
+                    <el-table-column label="操作" width="90">
+                        <template #default="{row}"><el-button size="small" type="danger" @click="removeClass(row.id)">移除</el-button></template>
+                    </el-table-column>
+                </el-table>
+                <template #footer><el-button @click="classesVisible=false">关闭</el-button></template>
+            </el-dialog>
+            <el-dialog :title="'教学班学生 - ' + (currentRow?.name||'')" v-model="studentsVisible" width="560px">
+                <el-button size="small" type="warning" style="margin-bottom:8px" @click="resetPwds">重置全部学生密码</el-button>
+                <el-table :data="students" border stripe max-height="320">
+                    <el-table-column prop="username" label="学号" width="140"/>
+                    <el-table-column prop="realName" label="姓名"/>
+                    <el-table-column prop="clazzId" label="班级ID" width="80"/>
+                </el-table>
+            </el-dialog>
+        </div>`,
+    setup() {
+        const list = ref([]), dialogVisible = ref(false), isEdit = ref(false), form = reactive({id:null,name:''})
+        const classesVisible = ref(false), studentsVisible = ref(false), currentRow = ref(null)
+        const allClasses = ref([]), selectedClazzIds = ref([]), tcClasses = ref([]), students = ref([])
+        const load = async () => { try { const r = await api.teacherTeachingClasses({page:1,size:100}); list.value = r.data.data.records } catch(e) { console.error(e) } }
+        const showAdd = () => { Object.assign(form,{id:null,name:''}); isEdit.value = false; dialogVisible.value = true }
+        const edit = row => { Object.assign(form,{id:row.id,name:row.name}); isEdit.value = true; dialogVisible.value = true }
+        const save = async () => {
+            if (!form.name) return $m('名称必填','error')
+            try { isEdit.value ? await api.updateTeachingClass(form.id, form) : await api.addTeachingClass(form); dialogVisible.value = false; load(); $m(isEdit.value?'修改成功':'创建成功') } catch(e) { $m(e.response?.data?.msg||'失败','error') }
+        }
+        const del = row => { $c(`确定删除教学班「${row.name}」？`).then(async ()=>{ await api.deleteTeachingClass(row.id); load(); $m('已删除') }).catch(()=>{}) }
+        const manageClasses = async row => {
+            currentRow.value = row; selectedClazzIds.value = []; classesVisible.value = true
+            try { const r = await api.teachingClassDetail(row.id); tcClasses.value = r.data.data.classes } catch(e) { console.error(e) }
+        }
+        const addClasses = async () => {
+            if (!selectedClazzIds.value.length) return $m('请选择班级','error')
+            try { await api.teachingClassAddClasses(currentRow.value.id, {clazzIds: selectedClazzIds.value}); $m('已加入'); manageClasses(currentRow.value) } catch(e) { $m(e.response?.data?.msg||'失败','error') }
+        }
+        const removeClass = async cid => {
+            try { await api.teachingClassRemoveClass(currentRow.value.id, cid); $m('已移除'); manageClasses(currentRow.value) } catch(e) { $m(e.response?.data?.msg||'失败','error') }
+        }
+        const viewStudents = async row => {
+            currentRow.value = row; studentsVisible.value = true
+            try { const r = await api.teachingClassStudents(row.id); students.value = r.data.data } catch(e) { console.error(e) }
+        }
+        const resetPwds = () => {
+            $c(`确定重置该教学班全部 ${students.value.length} 名学生的密码？`).then(async ()=>{
+                try {
+                    const r = await api.resetTcStudentPwds(currentRow.value.id)
+                    const d = r.data.data
+                    const lines = d.students.slice(0,10).map(s=>`${s.username}（${s.realName}）：${s.newPassword}`).join('\n')
+                    ElementPlus.ElMessageBox.alert(`已重置 ${d.resetCount} 名学生密码：\n\n${lines}${d.students.length>10?`\n…其余 ${d.students.length-10} 名略`:''}`, '重置结果')
+                } catch(e) { $m(e.response?.data?.msg||'重置失败','error') }
+            }).catch(()=>{})
+        }
+        onMounted(async () => { load(); try { const r = await api.teacherClasses({page:1,size:100}); allClasses.value = r.data.data.records } catch(e) { console.error(e) } })
+        return { list, dialogVisible, isEdit, form, showAdd, edit, save, del, manageClasses, classesVisible, studentsVisible, currentRow, allClasses, selectedClazzIds, tcClasses, students, addClasses, removeClass, viewStudents, resetPwds }
+    }
+})
+
 // ======== Teacher Homework List ========
 const TeacherHomeworks = defineComponent({
     emits: ['viewGrading'],
@@ -643,7 +743,7 @@ const TeacherAssign = defineComponent({
             } catch(e) { $m(e.response?.data?.msg||'布置失败','error') } finally { submitting.value = false }
         }
         const reset = () => { Object.assign(form, {title:'',description:'',teachingClassId:null,deadline:''}); selected.value = []; questions.value = [] }
-        onMounted(async () => { try { const r = await api.teachingClasses({page:1,size:50}); tcList.value = r.data.data.records } catch(e) { console.error(e) } })
+        onMounted(async () => { try { const r = await api.teacherTeachingClasses({page:1,size:50}); tcList.value = r.data.data.records } catch(e) { console.error(e) } })
         return { form, tcList, questions, selected, qKeyword, qType, submitting, searchQuestions, onSelect, submit, reset, TYPE_MAP, DIFF_MAP }
     }
 })
@@ -815,7 +915,7 @@ const app = createApp({
         const currentView = ref('AdminDashboard')
         const viewMap = {
             ADMIN: {dashboard:'AdminDashboard',teachers:'AdminTeachers',classes:'AdminClasses',students:'AdminStudents',questions:'AdminQuestions',knowledge:'AdminKnowledge'},
-            TEACHER: {myHomeworks:'TeacherHomeworks',assignHw:'TeacherAssign',grading:'TeacherGrading'},
+            TEACHER: {teachingClasses:'TeacherTeachingClasses',myHomeworks:'TeacherHomeworks',assignHw:'TeacherAssign',grading:'TeacherGrading'},
             STUDENT: {myHw:'StudentHomeworks'}
         }
         const updateView = () => {
