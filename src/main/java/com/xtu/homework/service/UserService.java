@@ -7,6 +7,7 @@ import com.xtu.homework.entity.User;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 public interface UserService extends IService<User> {
     String login(String username, String password);
@@ -19,5 +20,5 @@ public interface UserService extends IService<User> {
     int importStudents(Long clazzId, List<User> students);
     void transferStudent(Long studentId, Long fromClazzId, Long toClazzId);
     List<Clazz> importClasses(MultipartFile file);
-    int importStudentsFromExcel(Long clazzId, MultipartFile file);
+    Map<String, Object> importStudentsFromExcel(Long clazzId, MultipartFile file);
 }

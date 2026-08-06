@@ -293,7 +293,19 @@ const AdminClasses = defineComponent({
         const saveEdit = async () => { try { await api.updateClass(editForm.id, editForm); editVisible.value = false; load(); $m('修改成功') } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
         const del = id => { $c('确定删除该班级？').then(async ()=>{ await api.deleteClass(id); load(); $m('已删除') }).catch(()=>{}) }
         const viewStudents = async row => { currentClazzId.value = row.id; studentVisible.value = true; try { const r = await api.classStudents(row.id, {page:1,size:200}); students.value = r.data.data.records } catch(e) { console.error(e) } }
-        const uploadStudents = file => { api.importStudents(file, currentClazzId.value).then(r => { $m('成功导入 '+r.data.data.imported+' 名学生'); viewStudents({id: currentClazzId.value}) }).catch(e => $m(e.response?.data?.msg||'导入失败','error')); return false }
+        const uploadStudents = file => {
+            api.importStudents(file, currentClazzId.value).then(r => {
+                const d = r.data.data
+                if (d.errors && d.errors.length) {
+                    const lines = d.errors.slice(0, 10).map(e => `第${e.row}行：${e.msg}`).join('\n')
+                    ElementPlus.ElMessageBox.alert(`导入校验未通过（共 ${d.errors.length} 条错误），未导入任何学生：\n\n${lines}${d.errors.length > 10 ? `\n…其余 ${d.errors.length - 10} 条略` : ''}`, '导入排错', { type: 'error' })
+                } else {
+                    $m(`成功导入 ${d.imported} 名学生`)
+                    viewStudents({id: currentClazzId.value})
+                }
+            }).catch(e => $m(e.response?.data?.msg || '导入失败', 'error'))
+            return false
+        }
         onMounted(load)
         return { list, dialogVisible, editVisible, studentVisible, form, editForm, students, showAdd, save, edit, saveEdit, del, viewStudents, uploadStudents }
     }

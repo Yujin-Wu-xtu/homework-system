@@ -2,12 +2,20 @@ package com.xtu.homework.service;
 
 import com.xtu.homework.HomeworkApplication;
 import com.xtu.homework.entity.User;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -175,5 +183,79 @@ class UserServiceImplTest {
     @Order(15)
     void testDeleteNonexistentStudent() {
         assertThrows(RuntimeException.class, () -> userService.deleteStudent(99999L));
+    }
+
+    // ========== Excel 导入（列名匹配 + 排错）==========
+
+    private MultipartFile buildXlsx(String[] header, String[][] rows) throws Exception {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (Workbook wb = new XSSFWorkbook()) {
+            Sheet sheet = wb.createSheet("学生");
+            Row h = sheet.createRow(0);
+            for (int i = 0; i < header.length; i++) h.createCell(i).setCellValue(header[i]);
+            for (int r = 0; r < rows.length; r++) {
+                Row row = sheet.createRow(r + 1);
+                for (int c = 0; c < rows[r].length; c++) {
+                    if (rows[r][c] != null && !rows[r][c].isEmpty()) row.createCell(c).setCellValue(rows[r][c]);
+                }
+            }
+            wb.write(bos);
+        }
+        return new MockMultipartFile("file", "students.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bos.toByteArray());
+    }
+
+    @Test
+    @Order(16)
+    void testImportStudentsByColumnName() throws Exception {
+        // 表头含"序号"列且列顺序不同：应按列名匹配，序号不得被当学号
+        MultipartFile file = buildXlsx(
+                new String[]{"序号", "学号", "姓名", "电话", "邮箱"},
+                new String[][]{
+                        {"1", "S_col_1", "列匹配学生1", "13811112222", "a@x.com"},
+                        {"2", "S_col_2", "列匹配学生2", "13833334444", "b@x.com"},
+                });
+        Map<String, Object> result = userService.importStudentsFromExcel(1L, file);
+        assertEquals(2, result.get("imported"), "应按列名正确识别学号/姓名/电话/邮箱");
+        assertEquals(0, ((List<?>) result.get("errors")).size());
+        User s1 = userService.getOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>()
+                .eq(User::getUsername, "S_col_1"));
+        assertNotNull(s1);
+        assertEquals("列匹配学生1", s1.getRealName());
+        assertEquals("13811112222", s1.getPhone());
+        assertEquals("a@x.com", s1.getEmail());
+    }
+
+    @Test
+    @Order(17)
+    void testImportStudentsRejectOnError() throws Exception {
+        // 含 3 类错误：学号为空 / 表格内重复 / 库中已存在 → 整表不导入
+        MultipartFile file = buildXlsx(
+                new String[]{"学号", "姓名"},
+                new String[][]{
+                        {"", "无名氏"},                    // 学号为空
+                        {"S_dup_x", "重复甲"},             // 表格内重复（下面再出现一次）
+                        {"S_dup_x", "重复乙"},
+                        {"20240001", "张三已在库"},        // 与初始数据重复
+                        {"S_ok_x", "正常学生"},            // 正确行，但整表有错 → 也不导入
+                });
+        Map<String, Object> result = userService.importStudentsFromExcel(1L, file);
+        assertEquals(0, result.get("imported"), "存在错误时整表不导入");
+        List<?> errors = (List<?>) result.get("errors");
+        assertEquals(3, errors.size()); // 学号为空 + 表格内重复 + 库中已存在
+        // 正确行不落库
+        assertNull(userService.getOne(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<User>()
+                .eq(User::getUsername, "S_ok_x")));
+    }
+
+    @Test
+    @Order(18)
+    void testImportStudentsMissingHeader() throws Exception {
+        MultipartFile file = buildXlsx(new String[]{"序号", "姓名"}, new String[][]{{"1", "缺学号列"}});
+        Map<String, Object> result = userService.importStudentsFromExcel(1L, file);
+        assertEquals(0, result.get("imported"));
+        List<?> errors = (List<?>) result.get("errors");
+        assertEquals(1, errors.size());
+        assertTrue(((Map<?, ?>) errors.get(0)).get("msg").toString().contains("学号"));
     }
 }

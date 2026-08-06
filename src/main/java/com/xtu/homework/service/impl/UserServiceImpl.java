@@ -23,7 +23,10 @@ import java.io.InputStream;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -228,43 +231,93 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
 
     @Override
     @Transactional
-    public int importStudentsFromExcel(Long clazzId, MultipartFile file) {
+    public Map<String, Object> importStudentsFromExcel(Long clazzId, MultipartFile file) {
         Clazz clazz = clazzDao.selectById(clazzId);
         if (clazz == null) throw new RuntimeException("班级不存在");
 
-        int count = 0;
+        List<Map<String, Object>> errors = new ArrayList<>();
+        List<User> toInsert = new ArrayList<>();
         try (InputStream is = file.getInputStream();
              Workbook wb = new XSSFWorkbook(is)) {
             Sheet sheet = wb.getSheetAt(0);
+            if (sheet.getLastRowNum() < 1) {
+                throw new RuntimeException("表格为空或只有表头，没有可导入的数据行");
+            }
+
+            // ---- 按表头列名匹配（避免固定列位置误匹配"序号"等列）----
+            Row header = sheet.getRow(0);
+            int colNo = -1, colName = -1, colPhone = -1, colEmail = -1;
+            for (int c = 0; c < header.getLastCellNum(); c++) {
+                String h = getCellString(header.getCell(c));
+                if (h == null || h.isBlank()) continue;
+                String hLower = h.toLowerCase();
+                if (colNo == -1 && h.contains("学号")) colNo = c;
+                else if (colName == -1 && h.contains("姓名")) colName = c;
+                else if (colPhone == -1 && (h.contains("电话") || h.contains("手机"))) colPhone = c;
+                else if (colEmail == -1 && (h.contains("邮箱") || hLower.contains("email"))) colEmail = c;
+            }
+            if (colNo == -1 || colName == -1) {
+                errors.add(Map.of("row", 1, "msg",
+                        "表头缺少必要列：需包含「学号」和「姓名」（表头位于第1行，请勿修改）"));
+                return Map.of("imported", 0, "checked", 0, "errors", errors);
+            }
+
+            // ---- 逐行校验，收集全部错误（排错优先：有错误则整表不导入）----
+            Set<String> seen = new HashSet<>();
             for (int i = 1; i <= sheet.getLastRowNum(); i++) {
                 Row row = sheet.getRow(i);
                 if (row == null) continue;
-                // 列: 学号, 姓名, (可选)手机号, (可选)邮箱
-                String username = getCellString(row.getCell(0));
-                String realName = getCellString(row.getCell(1));
-                if (username == null || username.isBlank()) continue;
+                String username = getCellString(row.getCell(colNo));
+                String realName = getCellString(row.getCell(colName));
+                String phone = colPhone >= 0 ? getCellString(row.getCell(colPhone)) : null;
+                String email = colEmail >= 0 ? getCellString(row.getCell(colEmail)) : null;
+                int rowNum = i + 1;
 
+                if (username == null || username.isBlank()) {
+                    errors.add(Map.of("row", rowNum, "msg", "学号为空"));
+                    continue;
+                }
+                if (realName == null || realName.isBlank()) {
+                    errors.add(Map.of("row", rowNum, "msg", "姓名为空"));
+                    continue;
+                }
+                if (!seen.add(username)) {
+                    errors.add(Map.of("row", rowNum, "msg", "表格内学号重复：" + username));
+                    continue;
+                }
                 User exist = userDao.selectOne(
                         new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-                if (exist != null) continue;
+                if (exist != null) {
+                    errors.add(Map.of("row", rowNum, "msg", "学号已存在（" + exist.getRealName() + "）"));
+                    continue;
+                }
 
                 User s = new User();
                 s.setUsername(username);
-                s.setRealName(realName != null ? realName : username);
+                s.setRealName(realName);
                 s.setRole("STUDENT");
                 s.setClazzId(clazzId);
-                s.setPhone(getCellString(row.getCell(2)));
-                s.setEmail(getCellString(row.getCell(3)));
+                s.setPhone(phone);
+                s.setEmail(email);
                 s.setPassword(passwordEncoder.encode(generateRandomPassword()));
                 s.setPwdResetRequired(true);
                 s.setStatus("ACTIVE");
-                userDao.insert(s);
-                count++;
+                toInsert.add(s);
             }
         } catch (Exception e) {
             throw new RuntimeException("Excel解析失败: " + e.getMessage());
         }
-        return count;
+
+        // 排错优先：只要存在错误行，整表不导入，由前端弹窗回显
+        if (!errors.isEmpty()) {
+            return Map.of("imported", 0, "checked", toInsert.size(), "errors", errors);
+        }
+        int count = 0;
+        for (User s : toInsert) {
+            userDao.insert(s);
+            count++;
+        }
+        return Map.of("imported", count, "checked", toInsert.size(), "errors", errors);
     }
 
     private String getCellString(Cell cell) {

@@ -157,8 +157,7 @@ public class AdminController {
     public R importStudents(@RequestParam("file") MultipartFile file,
                             @RequestParam Long clazzId) {
         try {
-            int count = userService.importStudentsFromExcel(clazzId, file);
-            return R.ok().data(Map.of("imported", count));
+            return R.ok().data(userService.importStudentsFromExcel(clazzId, file));
         } catch (Exception e) {
             return R.badRequest("导入失败: " + e.getMessage());
         }

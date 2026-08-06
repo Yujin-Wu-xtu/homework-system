@@ -22,3 +22,6 @@ tools/
 Thumbs.db
 *.log
 *.tmp
+
+# Excel 数据文件（导入模板另见文档，不存二进制）
+*.xlsx
