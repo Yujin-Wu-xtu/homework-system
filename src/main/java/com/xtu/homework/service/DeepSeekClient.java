@@ -31,9 +31,22 @@ public class DeepSeekClient {
     private final ObjectMapper objectMapper;
 
     public DeepSeekClient(ObjectMapper objectMapper) {
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        HttpClient.Builder builder = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10));
+        // 支持代理（本地开发经 Clash）：读 HTTPS_PROXY 环境变量；服务器部署无此变量时直连
+        String proxyEnv = System.getenv("HTTPS_PROXY");
+        if (proxyEnv != null && !proxyEnv.isBlank() && !"direct".equalsIgnoreCase(proxyEnv)) {
+            try {
+                URI pu = URI.create(proxyEnv.contains("://") ? proxyEnv : "http://" + proxyEnv);
+                int port = pu.getPort() > 0 ? pu.getPort() : 80;
+                if (pu.getHost() != null) {
+                    builder.proxy(java.net.ProxySelector.of(new java.net.InetSocketAddress(pu.getHost(), port)));
+                }
+            } catch (Exception ignored) {
+                // 代理配置解析失败则直连
+            }
+        }
+        this.httpClient = builder.build();
         this.objectMapper = objectMapper;
     }
 

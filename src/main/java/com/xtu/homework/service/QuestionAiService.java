@@ -93,7 +93,7 @@ public class QuestionAiService {
             List<Map<String, Object>> drafts = new ArrayList<>();
             for (JsonNode q : questions) {
                 Map<String, Object> m = new HashMap<>();
-                m.put("type", q.hasNonNull("type") ? q.get("type").asText() : fallbackType);
+                m.put("type", q.hasNonNull("type") ? normalizeType(q.get("type").asText(), fallbackType) : fallbackType);
                 m.put("content", q.hasNonNull("content") ? q.get("content").asText() : "");
                 m.put("correctAnswer", q.hasNonNull("correctAnswer") ? q.get("correctAnswer").asText() : "");
                 m.put("referenceAnswer", q.hasNonNull("referenceAnswer") ? q.get("referenceAnswer").asText() : "");
@@ -115,5 +115,23 @@ public class QuestionAiService {
         } catch (Exception e) {
             throw new RuntimeException("AI 返回解析失败: " + e.getMessage());
         }
+    }
+
+    /** 模型可能用别名（SHORT_ANSWER/JUDGEMENT/MULTIPLE_CHOICE 等），规范化为系统枚举 */
+    private String normalizeType(String t, String fallbackType) {
+        String s = t == null ? "" : t.trim().toUpperCase();
+        if (s.contains("SHORT") || s.contains("ANSWER") || s.contains("ESSAY") || s.contains("QA") || s.contains("简答") || s.contains("问答")) {
+            return "ESSAY";
+        }
+        if (s.contains("JUDGE") || s.contains("TRUE") || s.contains("FALSE") || s.contains("判断") || s.contains("对错")) {
+            return "TRUE_FALSE";
+        }
+        if (s.contains("MULTI") || s.contains("多选")) {
+            return "MULTI_CHOICE";
+        }
+        if (s.contains("SINGLE") || s.contains("单选")) {
+            return "SINGLE_CHOICE";
+        }
+        return fallbackType == null ? "ESSAY" : fallbackType;
     }
 }
