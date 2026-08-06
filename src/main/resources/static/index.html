@@ -972,7 +972,7 @@ const StudentHomeworks = defineComponent({
 
 // ======== Main App ========
 const app = createApp({
-    components: { AdminDashboard, AdminTeachers, AdminClasses, AdminStudents, AdminQuestions, AdminKnowledge, TeacherHomeworks, TeacherAssign, TeacherGrading, StudentHomeworks },
+    components: { AdminDashboard, AdminTeachers, AdminClasses, AdminStudents, AdminQuestions, AdminKnowledge, AdminTeachingClasses, TeacherTeachingClasses, TeacherHomeworks, TeacherAssign, TeacherGrading, StudentHomeworks },
     setup() {
         const token = ref(localStorage.getItem('token')||'')
         const userInfo = reactive(JSON.parse(localStorage.getItem('userInfo')||'{}'))
