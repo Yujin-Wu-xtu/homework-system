@@ -32,7 +32,11 @@ public class QuestionAiService {
      */
     public List<Map<String, Object>> generateDrafts(String material, String type, int count, String difficulty) {
         if (material == null || material.isBlank()) {
-            throw new RuntimeException("课程材料不能为空");
+            throw new RuntimeException("课程材料不能为空（文件可能为扫描版/图片版，无法提取文字，请改用文字版文件或直接粘贴文本）");
+        }
+        material = material.strip();
+        if (material.length() < 20) {
+            throw new RuntimeException("材料内容过少（仅 " + material.length() + " 字符），无法生成题目。请确认文件可提取文字——扫描版/图片版 PDF 无法提取文本，请改用文字版 PDF 或直接粘贴文本");
         }
         if (material.length() > MAX_MATERIAL_CHARS) {
             material = material.substring(0, MAX_MATERIAL_CHARS);
@@ -88,7 +92,7 @@ public class QuestionAiService {
             JsonNode questions = root.has("questions") ? root.get("questions")
                     : (root.isArray() ? root : null);
             if (questions == null || !questions.isArray() || questions.isEmpty()) {
-                throw new RuntimeException("AI 返回中未找到题目数组");
+                throw new RuntimeException("AI 未能基于材料生成题目（返回空结果），请确认材料包含足够文字内容后重试");
             }
             List<Map<String, Object>> drafts = new ArrayList<>();
             for (JsonNode q : questions) {

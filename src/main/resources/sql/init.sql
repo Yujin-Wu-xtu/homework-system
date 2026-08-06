@@ -188,3 +188,15 @@ CREATE TABLE IF NOT EXISTS audit_log (
 INSERT INTO sys_user (username, password, real_name, role, status, pwd_reset_required)
 VALUES ('admin', '$2b$10$Dputx5F0q3szQJLH1458i.bcUET76edCRA6jWPQFvfYAXq02jQnBq', '系统管理员', 'ADMIN', 'ACTIVE', 0)
 ON DUPLICATE KEY UPDATE username=username;
+
+-- AI 出题资源文件表
+CREATE TABLE IF NOT EXISTS ai_material (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    file_name VARCHAR(200) NOT NULL COMMENT '原始文件名',
+    file_path VARCHAR(500) NOT NULL COMMENT '存储相对路径',
+    file_size BIGINT NOT NULL COMMENT '字节数',
+    file_type VARCHAR(20) NOT NULL COMMENT 'pdf/docx/txt/md',
+    uploader_id BIGINT NOT NULL COMMENT '上传管理员ID',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_uploader (uploader_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI出题资源文件表';

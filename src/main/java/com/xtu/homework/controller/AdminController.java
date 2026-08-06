@@ -14,6 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 
@@ -35,6 +36,7 @@ public class AdminController {
     private final QuestionOptionDao questionOptionDao;
     private final HomeworkQuestionDao homeworkQuestionDao;
     private final QuestionAiService questionAiService;
+    private final AiMaterialDao aiMaterialDao;
 
     // ---- 首页统计 ----
     @GetMapping("/dashboard")
@@ -322,10 +324,85 @@ public class AdminController {
     }
 
     // ---- AI 出题（大模型生成题目草稿，管理员预览审核后走常规新增入库）----
+    // 资源文件存储目录（data/ 已在 .gitignore，不入版本库）；用 user.dir 拼绝对路径，避免相对路径解析到 Tomcat 临时目录
+    private static final String AI_MATERIAL_DIR =
+            System.getProperty("user.dir") + java.io.File.separator + "data" + java.io.File.separator + "ai-materials" + java.io.File.separator;
+
+    @PostMapping("/materials")
+    public R uploadMaterial(@RequestParam("file") MultipartFile file,
+                            @RequestAttribute("userId") Long userId) {
+        try {
+            String name = file.getOriginalFilename() == null ? "unnamed" : file.getOriginalFilename();
+            String lower = name.toLowerCase();
+            String type;
+            if (lower.endsWith(".pdf")) type = "pdf";
+            else if (lower.endsWith(".docx")) type = "docx";
+            else if (lower.endsWith(".txt") || lower.endsWith(".md") || lower.endsWith(".markdown")) type = "txt";
+            else throw new RuntimeException("不支持的文件类型: " + name + "（支持 pdf/docx/txt/md）");
+
+            // 存储：data/ai-materials/<uuid>.<ext>，避免中文名/重名问题
+            String ext = lower.substring(lower.lastIndexOf('.'));
+            String storedName = java.util.UUID.randomUUID().toString().replace("-", "") + ext;
+            java.io.File dir = new java.io.File(AI_MATERIAL_DIR);
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw new RuntimeException("资源目录创建失败");
+            }
+            java.io.File target = new java.io.File(dir, storedName);
+            file.transferTo(target);
+
+            AiMaterial m = new AiMaterial();
+            m.setFileName(name);
+            m.setFilePath(target.getAbsolutePath());
+            m.setFileSize(file.getSize());
+            m.setFileType(type);
+            m.setUploaderId(userId);
+            aiMaterialDao.insert(m);
+            return R.ok("上传成功").data(m);
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        } catch (Exception e) {
+            return R.badRequest("上传失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/materials")
+    public R listMaterials() {
+        return R.ok().data(aiMaterialDao.selectList(
+                new LambdaQueryWrapper<AiMaterial>().orderByDesc(AiMaterial::getCreateTime)));
+    }
+
+    @DeleteMapping("/materials/{id}")
+    public R deleteMaterial(@PathVariable Long id) {
+        AiMaterial m = aiMaterialDao.selectById(id);
+        if (m == null) return R.badRequest("资源不存在");
+        try {
+            java.io.File f = new java.io.File(m.getFilePath());
+            if (f.exists() && !f.delete()) {
+                // 文件删除失败不阻断（记录删除即可）
+            }
+        } catch (Exception ignored) {
+        }
+        aiMaterialDao.deleteById(id);
+        return R.ok("已删除");
+    }
+
     @PostMapping("/questions/ai-generate")
     public R aiGenerate(@RequestBody Map<String, Object> body) {
         try {
-            String material = (String) body.get("material");
+            String material = null;
+            // 支持 materialId：从已上传资源读取文本（优先于 material 文本字段）
+            if (body.get("materialId") != null) {
+                Long materialId = ((Number) body.get("materialId")).longValue();
+                AiMaterial m = aiMaterialDao.selectById(materialId);
+                if (m == null) return R.badRequest("资源不存在或已被删除");
+                try (InputStream is = new java.io.FileInputStream(m.getFilePath())) {
+                    material = TextExtractor.extract(m.getFileName(), is.readAllBytes());
+                } catch (Exception e) {
+                    return R.badRequest("资源文本提取失败: " + e.getMessage());
+                }
+            } else {
+                material = (String) body.get("material");
+            }
             String type = (String) body.getOrDefault("type", "ESSAY");
             int count = body.get("count") != null ? ((Number) body.get("count")).intValue() : 5;
             String difficulty = (String) body.getOrDefault("difficulty", "MEDIUM");

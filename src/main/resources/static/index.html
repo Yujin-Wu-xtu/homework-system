@@ -93,6 +93,10 @@ const api = {
     importQuestions: file => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/questions/import', fd) },
     aiGenerate: d => axios.post('/api/admin/questions/ai-generate', d),
     aiGenerateFile: (file, p) => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/questions/ai-generate/file', fd, {params: p}) },
+    // AI 出题资源文件管理
+    materials: () => axios.get('/api/admin/materials'),
+    uploadMaterial: file => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/materials', fd) },
+    deleteMaterial: id => axios.delete('/api/admin/materials/' + id),
     // Admin - Knowledge Points
     knowledgePoints: k => axios.get('/api/admin/knowledge-points', {params: {keyword: k || ''}}),
     addKnowledgePoint: d => axios.post('/api/admin/knowledge-points', d),
@@ -403,8 +407,24 @@ const AdminQuestions = defineComponent({
             <!-- AI 出题弹窗 -->
             <el-dialog title="🤖 AI 生成题目" v-model="aiVisible" width="880px">
                 <template v-if="!aiDrafts.length">
-                    <el-alert type="info" :closable="false" style="margin-bottom:10px" title="上传课程资源或粘贴材料文本，AI 基于内容生成题目草稿（问答题含参考答案；选择/判断题的选项也由 AI 起草，最终由你审核确认后导入）"/>
-                    <el-form :inline="true">
+                    <el-alert type="info" :closable="false" style="margin-bottom:10px" title="① 上传课程资源（上传成功后文件会保存到资源库，可反复使用）或粘贴文本；② 选择资源/文本后点「生成题目」，AI 生成草稿供你审核导入"/>
+                    <div style="margin-bottom:8px">
+                        <el-upload :show-file-list="false" :before-upload="f=>materialUpload(f)" accept=".txt,.md,.docx,.pdf" style="display:inline-block">
+                            <el-button type="primary" size="small">📤 上传课程资源（txt/md/docx/pdf）</el-button>
+                        </el-upload>
+                        <span style="color:#909399;font-size:12px;margin-left:8px">上传成功后有提示，文件会出现在下方资源列表</span>
+                    </div>
+                    <el-table :data="materials" border stripe size="small" max-height="180" style="margin-bottom:8px" @selection-change="rows=>{aiMaterialId = rows.length ? rows[0].id : null}">
+                        <el-table-column type="selection" width="40"/>
+                        <el-table-column prop="fileName" label="资源文件" show-overflow-tooltip/>
+                        <el-table-column prop="fileType" label="类型" width="60"/>
+                        <el-table-column label="大小" width="90"><template #default="{row}">{{(row.fileSize/1024).toFixed(0)}} KB</template></el-table-column>
+                        <el-table-column label="上传时间" width="150"><template #default="{row}">{{String(row.createTime).replace('T',' ').slice(0,16)}}</template></el-table-column>
+                        <el-table-column label="操作" width="60"><template #default="{row}"><el-button size="small" type="danger" @click="materialDelete(row)">删</el-button></template></el-table-column>
+                        <template #empty><span style="color:#909399;font-size:12px">暂无资源，请先上传</span></template>
+                    </el-table>
+                    <el-input v-model="aiMaterial" type="textarea" :rows="3" placeholder="或直接粘贴课程材料文本（二选一：选中的资源优先）"/>
+                    <el-form :inline="true" style="margin-top:8px">
                         <el-form-item label="题型">
                             <el-select v-model="aiType" size="small" style="width:130px">
                                 <el-option label="问答题（推荐）" value="ESSAY"/>
@@ -420,14 +440,10 @@ const AdminQuestions = defineComponent({
                                 <el-option v-for="(v,k) in DIFF_MAP" :key="k" :label="v.label" :value="k"/>
                             </el-select>
                         </el-form-item>
+                        <el-form-item>
+                            <el-button type="primary" :loading="aiLoading" @click="aiRun">生成题目</el-button>
+                        </el-form-item>
                     </el-form>
-                    <el-input v-model="aiMaterial" type="textarea" :rows="5" placeholder="粘贴课程材料文本（或从下方上传文件）"/>
-                    <el-upload :show-file-list="false" :before-upload="f=>aiUpload(f)" accept=".txt,.md,.docx,.pdf" style="margin-top:8px">
-                        <el-button size="small">上传课程资源（txt/md/docx/pdf）</el-button>
-                    </el-upload>
-                    <div style="margin-top:10px;text-align:right">
-                        <el-button type="primary" :loading="aiLoading" @click="aiRun">生成题目</el-button>
-                    </div>
                 </template>
                 <template v-else>
                     <div style="margin-bottom:8px">
@@ -525,27 +541,37 @@ const AdminQuestions = defineComponent({
         const aiVisible = ref(false), aiType = ref('ESSAY'), aiCount = ref(5), aiDifficulty = ref('MEDIUM')
         const aiMaterial = ref(''), aiDrafts = ref([]), aiLoading = ref(false), aiImporting = ref(false)
         const aiChecked = ref([]), aiCheckAll = ref(false)
+        const materials = ref([]), aiMaterialId = ref(null)
         const aiEditVisible = ref(false), aiEditForm = reactive({type:'ESSAY',content:'',correctAnswer:'',referenceAnswer:'',options:[],knowledgePoint:'',difficulty:'MEDIUM'})
-        const openAi = () => { aiVisible.value = true; if (!aiDrafts.value.length) { aiMaterial.value = '' } }
+        const loadMaterials = async () => { try { const r = await api.materials(); materials.value = r.data.data || [] } catch(e) { console.error(e) } }
+        const openAi = () => { aiVisible.value = true; loadMaterials(); if (!aiDrafts.value.length) aiMaterial.value = '' }
+        // 上传资源：成功提示 + 刷新列表（不自动触发生成）
+        const materialUpload = file => {
+            api.uploadMaterial(file).then(r => {
+                $m(`上传成功：${r.data.data.fileName}`)
+                loadMaterials()
+            }).catch(e => $m(e.response?.data?.msg || '上传失败', 'error'))
+            return false
+        }
+        const materialDelete = row => {
+            $c(`确定删除资源「${row.fileName}」？`).then(async () => {
+                try { await api.deleteMaterial(row.id); loadMaterials(); $m('已删除') } catch(e) { $m(e.response?.data?.msg || '删除失败', 'error') }
+            }).catch(() => {})
+        }
         const aiRun = async () => {
-            if (!aiMaterial.value || !aiMaterial.value.trim()) return $m('请先粘贴课程材料或上传文件','error')
+            const hasMaterial = aiMaterialId.value != null
+            if (!hasMaterial && (!aiMaterial.value || !aiMaterial.value.trim())) return $m('请先选择资源文件或粘贴课程材料', 'error')
             aiLoading.value = true
             try {
-                const r = await api.aiGenerate({material: aiMaterial.value, type: aiType.value, count: aiCount.value, difficulty: aiDifficulty.value})
+                const payload = { type: aiType.value, count: aiCount.value, difficulty: aiDifficulty.value }
+                if (hasMaterial) payload.materialId = aiMaterialId.value
+                else payload.material = aiMaterial.value
+                const r = await api.aiGenerate(payload)
                 aiDrafts.value = r.data.data || []
                 aiChecked.value = aiDrafts.value.map(() => true)
                 aiCheckAll.value = true
-                if (!aiDrafts.value.length) $m('AI 未生成题目，请调整材料或重试','warning')
-            } catch(e) { $m(e.response?.data?.msg||'AI 生成失败','error') } finally { aiLoading.value = false }
-        }
-        const aiUpload = file => {
-            api.aiGenerateFile(file, {type: aiType.value, count: aiCount.value, difficulty: aiDifficulty.value}).then(r => {
-                aiDrafts.value = r.data.data || []
-                aiChecked.value = aiDrafts.value.map(() => true)
-                aiCheckAll.value = true
-                $m(`AI 生成 ${aiDrafts.value.length} 道题目，请审核`)
-            }).catch(e => $m(e.response?.data?.msg||'AI 生成失败','error'))
-            return false
+                if (!aiDrafts.value.length) $m('AI 未生成题目，请调整材料或重试', 'warning')
+            } catch(e) { $m(e.response?.data?.msg || 'AI 生成失败', 'error') } finally { aiLoading.value = false }
         }
         const aiEdit = (row, idx) => {
             Object.assign(aiEditForm, {
@@ -584,7 +610,7 @@ const AdminQuestions = defineComponent({
             else $m(msg)
         }
         onMounted(async () => { load(); try { const r = await api.knowledgePoints(); kpList.value = r.data.data } catch(e) { console.error(e) } })
-        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, load, toggle, del, showAdd, edit, save, uploadQuestions, aiVisible, aiType, aiCount, aiDifficulty, aiMaterial, aiDrafts, aiLoading, aiImporting, aiChecked, aiCheckAll, aiEditVisible, aiEditForm, openAi, aiRun, aiUpload, aiEdit, aiImport }
+        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, load, toggle, del, showAdd, edit, save, uploadQuestions, aiVisible, aiType, aiCount, aiDifficulty, aiMaterial, aiDrafts, aiLoading, aiImporting, aiChecked, aiCheckAll, aiEditVisible, aiEditForm, materials, aiMaterialId, openAi, aiRun, materialUpload, materialDelete, aiEdit, aiImport }
     }
 })
 

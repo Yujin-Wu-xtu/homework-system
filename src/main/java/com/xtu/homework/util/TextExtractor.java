@@ -19,19 +19,25 @@ public class TextExtractor {
     private TextExtractor() {}
 
     public static String extract(MultipartFile file) throws IOException {
-        String name = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase();
-        try (InputStream is = file.getInputStream()) {
-            if (name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".markdown")) {
-                return new String(file.getBytes(), StandardCharsets.UTF_8);
-            }
-            if (name.endsWith(".docx")) {
+        return extract(file.getOriginalFilename(), file.getBytes());
+    }
+
+    public static String extract(String fileName, byte[] bytes) throws IOException {
+        String name = fileName == null ? "" : fileName.toLowerCase();
+        if (name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".markdown")) {
+            return new String(bytes, StandardCharsets.UTF_8);
+        }
+        if (name.endsWith(".docx")) {
+            try (InputStream is = new java.io.ByteArrayInputStream(bytes)) {
                 return extractDocx(is);
             }
-            if (name.endsWith(".pdf")) {
+        }
+        if (name.endsWith(".pdf")) {
+            try (InputStream is = new java.io.ByteArrayInputStream(bytes)) {
                 return extractPdf(is);
             }
         }
-        throw new IOException("不支持的文件类型: " + file.getOriginalFilename() + "（支持 txt/md/docx/pdf）");
+        throw new IOException("不支持的文件类型: " + fileName + "（支持 txt/md/docx/pdf）");
     }
 
     private static String extractDocx(InputStream is) throws IOException {

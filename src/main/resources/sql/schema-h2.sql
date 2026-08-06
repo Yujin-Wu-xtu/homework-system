@@ -141,3 +141,14 @@ CREATE TABLE IF NOT EXISTS audit_log (
     ip_address VARCHAR(50),
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- AI 出题资源文件表
+CREATE TABLE IF NOT EXISTS ai_material (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    file_name VARCHAR(200) NOT NULL,
+    file_path VARCHAR(500) NOT NULL,
+    file_size BIGINT NOT NULL,
+    file_type VARCHAR(20) NOT NULL,
+    uploader_id BIGINT NOT NULL,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
