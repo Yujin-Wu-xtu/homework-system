@@ -5,9 +5,15 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.xtu.homework.dao.AuditLogDao;
 import com.xtu.homework.dao.ClazzDao;
+import com.xtu.homework.dao.HomeworkDao;
+import com.xtu.homework.dao.SubmissionDao;
+import com.xtu.homework.dao.TeachingClassClazzDao;
 import com.xtu.homework.dao.UserDao;
 import com.xtu.homework.entity.AuditLog;
 import com.xtu.homework.entity.Clazz;
+import com.xtu.homework.entity.Homework;
+import com.xtu.homework.entity.Submission;
+import com.xtu.homework.entity.TeachingClassClazz;
 import com.xtu.homework.entity.User;
 import com.xtu.homework.service.UserService;
 import com.xtu.homework.service.VerificationCodeService;
@@ -44,6 +50,9 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
     private final UserDao userDao;
     private final AuditLogDao auditLogDao;
     private final ClazzDao clazzDao;
+    private final TeachingClassClazzDao teachingClassClazzDao;
+    private final HomeworkDao homeworkDao;
+    private final SubmissionDao submissionDao;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final VerificationCodeService verificationCodeService;
@@ -197,6 +206,7 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
     }
 
     @Override
+    @Transactional
     public User addStudent(Long clazzId, User student) {
         Clazz clazz = clazzDao.selectById(clazzId);
         if (clazz == null) throw new RuntimeException("班级不存在");
@@ -212,7 +222,43 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
         student.setPwdResetRequired(true);
         student.setStatus("ACTIVE");
         userDao.insert(student);
+        // 学生进入自然班 → 自动补该班关联教学班已发布作业的提交记录（新同学立即可见同班作业）
+        syncStudentToTeachingClasses(student.getId(), clazzId);
         return student;
+    }
+
+    /**
+     * 学生进入自然班后，自动补齐该自然班关联教学班（teaching_class_clazz）中
+     * 已发布/已关闭作业的 submission 记录（NOT_SUBMITTED）——学生端作业可见性按
+     * submission 反查，补上后新同学/转班同学立刻能看到同班同学正在上的课程作业。
+     * 幂等：已有 submission 的作业跳过。
+     */
+    @Override
+    @Transactional
+    public void syncStudentToTeachingClasses(Long studentId, Long clazzId) {
+        if (studentId == null || clazzId == null) return;
+        List<TeachingClassClazz> links = teachingClassClazzDao.selectList(
+                new LambdaQueryWrapper<TeachingClassClazz>().eq(TeachingClassClazz::getClazzId, clazzId));
+        if (links.isEmpty()) return;
+        List<Long> tcIds = links.stream()
+                .map(TeachingClassClazz::getTeachingClassId).distinct().toList();
+        List<Homework> hws = homeworkDao.selectList(
+                new LambdaQueryWrapper<Homework>()
+                        .in(Homework::getTeachingClassId, tcIds)
+                        .in(Homework::getStatus, List.of("PUBLISHED", "CLOSED")));
+        for (Homework hw : hws) {
+            Long cnt = submissionDao.selectCount(
+                    new LambdaQueryWrapper<Submission>()
+                            .eq(Submission::getHomeworkId, hw.getId())
+                            .eq(Submission::getStudentId, studentId));
+            if (cnt == null || cnt == 0) {
+                Submission sub = new Submission();
+                sub.setHomeworkId(hw.getId());
+                sub.setStudentId(studentId);
+                sub.setStatus("NOT_SUBMITTED");
+                submissionDao.insert(sub);
+            }
+        }
     }
 
     @Override
@@ -241,16 +287,22 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
             s.setPwdResetRequired(true);
             s.setStatus("ACTIVE");
             userDao.insert(s);
+            // 学生进入自然班 → 自动补该班关联教学班已发布作业的提交记录
+            syncStudentToTeachingClasses(s.getId(), clazzId);
             count++;
         }
         return count;
     }
 
     @Override
+    @Transactional
     public void transferStudent(Long studentId, Long fromClazzId, Long toClazzId) {
         User student = userDao.selectById(studentId);
         student.setClazzId(toClazzId);
         userDao.updateById(student);
+        // 转班 = 进入新自然班 → 自动补新班关联教学班已发布作业的提交记录
+        // （旧教学班的已有提交记录保留，作为历史作业；新教学班的作业立即可见）
+        syncStudentToTeachingClasses(studentId, toClazzId);
     }
 
     @Override
@@ -352,7 +404,8 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
                 s.setClazzId(clazzId);
                 s.setPhone(phone);
                 s.setEmail(email);
-                s.setPassword(passwordEncoder.encode(generateRandomPassword()));
+                // 统一初始密码 Admin123456（3cac49f 功能模型：导入学生同新增学生；此处曾漏网用随机密码）
+                s.setPassword(passwordEncoder.encode(DEFAULT_PASSWORD));
                 s.setPwdResetRequired(true);
                 s.setStatus("ACTIVE");
                 toInsert.add(s);
@@ -370,6 +423,10 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
             userDao.insert(s);
             count++;
         }
+        // 学生进入自然班 → 自动补该班关联教学班已发布作业的提交记录（批量导入的学生同样生效）
+        for (User s : toInsert) {
+            syncStudentToTeachingClasses(s.getId(), clazzId);
+        }
         return Map.of("imported", count, "checked", toInsert.size(), "errors", errors);
     }
 
@@ -383,6 +440,7 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
         };
     }
 
+    /** 管理员/教师重置密码时生成随机新密码（返回给调用方展示） */
     private String generateRandomPassword() {
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         SecureRandom random = new SecureRandom();

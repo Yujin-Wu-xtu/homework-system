@@ -20,6 +20,12 @@ public interface UserService extends IService<User> {
     Page<User> listTeachers(int page, int size, String keyword);
     User addTeacher(User teacher);
     User addStudent(Long clazzId, User student);
+
+    /**
+     * 学生进入自然班后自动补齐该班关联教学班已发布/已关闭作业的 submission（幂等），
+     * 由 addStudent / importStudents / importStudentsFromExcel / transferStudent 内部调用
+     */
+    void syncStudentToTeachingClasses(Long studentId, Long clazzId);
     void deleteStudent(Long studentId);
     int importStudents(Long clazzId, List<User> students);
     void transferStudent(Long studentId, Long fromClazzId, Long toClazzId);

@@ -1,7 +1,13 @@
 package com.xtu.homework.service;
 
 import com.xtu.homework.HomeworkApplication;
+import com.xtu.homework.dao.HomeworkDao;
+import com.xtu.homework.dao.SubmissionDao;
+import com.xtu.homework.dao.TeachingClassClazzDao;
 import com.xtu.homework.dao.VerificationCodeDao;
+import com.xtu.homework.entity.Homework;
+import com.xtu.homework.entity.Submission;
+import com.xtu.homework.entity.TeachingClassClazz;
 import com.xtu.homework.entity.User;
 import com.xtu.homework.entity.VerificationCode;
 import com.xtu.homework.service.VerificationCodeService;
@@ -17,6 +23,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +46,15 @@ class UserServiceImplTest {
 
     @Autowired
     private VerificationCodeDao verificationCodeDao;
+
+    @Autowired
+    private HomeworkDao homeworkDao;
+
+    @Autowired
+    private SubmissionDao submissionDao;
+
+    @Autowired
+    private TeachingClassClazzDao teachingClassClazzDao;
 
     private static Long testTeacherId;
 
@@ -379,5 +396,63 @@ class UserServiceImplTest {
         String code = verificationCodeService.issue("email", email);
         assertThrows(RuntimeException.class, () ->
                 userService.registerByEmail("ab", email, "RegUser123", code));
+    }
+
+    // ========== 学生自动加入教学班（新同学看到同班已发布作业）==========
+
+    @Test
+    @Order(36)
+    void testStudentAutoJoinsTeachingClassSubmissions() {
+        // 自插一个已发布作业到教学班1（H2 初始：教学班1 关联自然班1、2）
+        Homework hw = new Homework();
+        hw.setTitle("自动入班测试作业-" + System.currentTimeMillis());
+        hw.setTeachingClassId(1L);
+        hw.setTeacherId(2L);
+        hw.setDeadline(LocalDateTime.now().plusDays(7));
+        hw.setTotalScore(BigDecimal.TEN);
+        hw.setStatus("PUBLISHED");
+        hw.setQuestionLocked(false);
+        homeworkDao.insert(hw);
+
+        // 新增学生到自然班1 → 应自动补上教学班1已发布作业的提交记录（新同学立即可见同班作业）
+        User s = new User();
+        s.setUsername("S_autojoin_" + System.currentTimeMillis());
+        s.setRealName("自动入班学生");
+        User saved = userService.addStudent(1L, s);
+        Long cnt = submissionDao.selectCount(
+                new LambdaQueryWrapper<Submission>()
+                        .eq(Submission::getHomeworkId, hw.getId())
+                        .eq(Submission::getStudentId, saved.getId()));
+        assertEquals(1L, cnt, "新增学生应自动获得自然班关联教学班已发布作业的提交记录");
+
+        // 幂等：重复同步不产生重复记录
+        userService.syncStudentToTeachingClasses(saved.getId(), 1L);
+        Long cnt2 = submissionDao.selectCount(
+                new LambdaQueryWrapper<Submission>()
+                        .eq(Submission::getHomeworkId, hw.getId())
+                        .eq(Submission::getStudentId, saved.getId()));
+        assertEquals(1L, cnt2, "重复同步应幂等（不重复插入）");
+
+        // 转班场景：建一个只关联自然班2的教学班及其作业，学生从班1转到班2 → 应补上该作业
+        TeachingClassClazz link = new TeachingClassClazz();
+        link.setTeachingClassId(999L);
+        link.setClazzId(2L);
+        teachingClassClazzDao.insert(link);
+        Homework hw2 = new Homework();
+        hw2.setTitle("转班自动入班测试-" + System.currentTimeMillis());
+        hw2.setTeachingClassId(999L);
+        hw2.setTeacherId(2L);
+        hw2.setDeadline(LocalDateTime.now().plusDays(7));
+        hw2.setTotalScore(BigDecimal.TEN);
+        hw2.setStatus("PUBLISHED");
+        hw2.setQuestionLocked(false);
+        homeworkDao.insert(hw2);
+
+        userService.transferStudent(saved.getId(), 1L, 2L);
+        Long cnt3 = submissionDao.selectCount(
+                new LambdaQueryWrapper<Submission>()
+                        .eq(Submission::getHomeworkId, hw2.getId())
+                        .eq(Submission::getStudentId, saved.getId()));
+        assertEquals(1L, cnt3, "转班学生应自动获得新自然班关联教学班已发布作业的提交记录");
     }
 }
