@@ -6,6 +6,7 @@
     <title>在线作业系统</title>
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/vue-router@4"></script>
     <script src="https://unpkg.com/element-plus"></script>
     <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <style>
@@ -34,70 +35,12 @@
 </head>
 <body>
 <div id="app" v-cloak>
-    <!-- ========== 登录页面 ========== -->
-    <div v-if="!token" class="login-container">
-        <div class="login-card">
-            <h1>📚 在线作业系统</h1>
-            <el-form :model="loginForm" :rules="loginRules" ref="loginFormRef">
-                <el-form-item prop="username">
-                    <el-input v-model="loginForm.username" placeholder="用户名" size="large" clearable/>
-                </el-form-item>
-                <el-form-item prop="password">
-                    <el-input v-model="loginForm.password" placeholder="密码" type="password" size="large" show-password @keyup.enter="doLogin"/>
-                </el-form-item>
-                <el-form-item>
-                    <el-button type="primary" size="large" style="width:100%" @click="doLogin" :loading="loading">登 录</el-button>
-                </el-form-item>
-            </el-form>
-            <div style="text-align:center;color:#909399;font-size:13px;margin-top:12px">
-                测试账号：admin / T2024001 / 20240001<br>密码统一：Admin123456
-            </div>
-        </div>
-    </div>
-
-    <!-- ========== 主界面 ========== -->
-    <div v-else>
-        <div class="main-header">
-            <h2>📚 在线作业系统</h2>
-            <div>
-                <span style="color:#606266;margin-right:16px">{{ userInfo.realName || userInfo.username }}
-                    <el-tag size="small" :type="roleTag">{{ roleLabel }}</el-tag>
-                </span>
-                <el-button size="small" @click="logout">退出登录</el-button>
-            </div>
-        </div>
-        <div class="main-layout">
-            <div class="sidebar">
-                <el-menu :default-active="activeMenu" @select="handleMenuSelect" text-color="#bfcbd9" active-text-color="#409eff">
-                    <template v-if="role==='ADMIN'">
-                        <el-menu-item index="dashboard"><span>📊</span> 首页统计</el-menu-item>
-                        <el-menu-item index="teachers"><span>👤</span> 教师管理</el-menu-item>
-                        <el-menu-item index="classes"><span>🏫</span> 班级管理</el-menu-item>
-                        <el-menu-item index="students"><span>👨‍🎓</span> 学生管理</el-menu-item>
-                        <el-menu-item index="questions"><span>✏️</span> 题库管理</el-menu-item>
-                        <el-menu-item index="knowledge"><span>📂</span> 知识点管理</el-menu-item>
-                        <el-menu-item index="tcAdmin"><span>🏫</span> 教学班管理</el-menu-item>
-                    </template>
-                    <template v-if="role==='TEACHER'">
-                        <el-menu-item index="teachingClasses"><span>🏫</span> 教学班管理</el-menu-item>
-                        <el-menu-item index="myHomeworks"><span>📄</span> 作业管理</el-menu-item>
-                        <el-menu-item index="assignHw"><span>📝</span> 布置作业</el-menu-item>
-                        <el-menu-item index="grading"><span>✅</span> 批改作业</el-menu-item>
-                    </template>
-                    <template v-if="role==='STUDENT'">
-                        <el-menu-item index="myHw"><span>📓</span> 我的作业</el-menu-item>
-                    </template>
-                </el-menu>
-            </div>
-            <div class="content">
-                <component :is="currentView" :key="activeMenu"></component>
-            </div>
-        </div>
-    </div>
+    <router-view></router-view>
 </div>
 
 <script>
 const { createApp, ref, reactive, computed, watch, defineComponent, onMounted, nextTick, toRefs } = Vue
+const { createRouter, createWebHistory, useRouter, useRoute } = VueRouter
 
 // ======== Axios 配置 ========
 axios.defaults.baseURL = ''
@@ -970,67 +913,160 @@ const StudentHomeworks = defineComponent({
     }
 })
 
-// ======== Main App ========
-const app = createApp({
-    components: { AdminDashboard, AdminTeachers, AdminClasses, AdminStudents, AdminQuestions, AdminKnowledge, AdminTeachingClasses, TeacherTeachingClasses, TeacherHomeworks, TeacherAssign, TeacherGrading, StudentHomeworks },
+// ======== 登录页 ========
+const LoginView = defineComponent({
+    template: `
+        <div class="login-container">
+            <div class="login-card">
+                <h1>📚 在线作业系统</h1>
+                <p style="text-align:center;color:#909399;margin-bottom:20px">欢迎登录</p>
+                <el-form :model="form" :rules="rules" ref="formRef">
+                    <el-form-item prop="username">
+                        <el-input v-model="form.username" placeholder="用户名" size="large" clearable/>
+                    </el-form-item>
+                    <el-form-item prop="password">
+                        <el-input v-model="form.password" placeholder="密码" type="password" size="large" show-password @keyup.enter="doLogin"/>
+                    </el-form-item>
+                    <el-form-item>
+                        <el-button type="primary" size="large" style="width:100%" @click="doLogin" :loading="loading">登 录</el-button>
+                    </el-form-item>
+                </el-form>
+                <div style="text-align:center;color:#909399;font-size:12px">
+                    测试账号：admin / T2024001 / 20240001<br>密码统一：Admin123456
+                </div>
+            </div>
+        </div>`,
     setup() {
-        const token = ref(localStorage.getItem('token')||'')
+        const router = useRouter()
+        const form = reactive({username:'',password:''})
+        const rules = {username:[{required:true,message:'请输入用户名'}],password:[{required:true,message:'请输入密码'}]}
+        const formRef = ref(null), loading = ref(false)
+        const doLogin = async () => {
+            if (!formRef.value) return
+            await formRef.value.validate(async valid => {
+                if (!valid) return
+                loading.value = true
+                try {
+                    const r = await api.login({username:form.username,password:form.password})
+                    const t = r.data.data.token
+                    localStorage.setItem('token', t)
+                    let u
+                    try {
+                        const me = await axios.get('/api/auth/me')
+                        u = {username:me.data.data.username, realName:me.data.data.realName, role:me.data.data.role}
+                    } catch(e) {
+                        u = {username:form.username, realName:form.username, role:r.data.data.role}
+                    }
+                    localStorage.setItem('userInfo', JSON.stringify(u))
+                    router.push(defaultPath(u.role))
+                } catch(e) { $m(e.response?.data?.msg || '登录失败','error') } finally { loading.value = false }
+            })
+        }
+        return { form, rules, formRef, loading, doLogin }
+    }
+})
+
+// ======== 主布局（含侧边栏，内容区 router-view）========
+const MainLayout = defineComponent({
+    template: `
+        <div>
+            <div class="main-header">
+                <h2>📚 在线作业系统</h2>
+                <div>
+                    <span style="color:#606266;margin-right:16px">{{ userInfo.realName || userInfo.username }}
+                        <el-tag size="small" :type="roleTag">{{ roleLabel }}</el-tag>
+                    </span>
+                    <el-button size="small" @click="logout">退出登录</el-button>
+                </div>
+            </div>
+            <div class="main-layout">
+                <div class="sidebar">
+                    <el-menu :default-active="route.path" router text-color="#bfcbd9" active-text-color="#409eff">
+                        <template v-if="role==='ADMIN'">
+                            <el-menu-item index="/dashboard"><span>📊</span> 首页统计</el-menu-item>
+                            <el-menu-item index="/teachers"><span>👤</span> 教师管理</el-menu-item>
+                            <el-menu-item index="/classes"><span>🏫</span> 班级管理</el-menu-item>
+                            <el-menu-item index="/students"><span>👨‍🎓</span> 学生管理</el-menu-item>
+                            <el-menu-item index="/questions"><span>✏️</span> 题库管理</el-menu-item>
+                            <el-menu-item index="/knowledge"><span>📂</span> 知识点管理</el-menu-item>
+                            <el-menu-item index="/tcAdmin"><span>🏫</span> 教学班管理</el-menu-item>
+                        </template>
+                        <template v-if="role==='TEACHER'">
+                            <el-menu-item index="/teachingClasses"><span>🏫</span> 教学班管理</el-menu-item>
+                            <el-menu-item index="/myHomeworks"><span>📄</span> 作业管理</el-menu-item>
+                            <el-menu-item index="/assignHw"><span>📝</span> 布置作业</el-menu-item>
+                            <el-menu-item index="/grading"><span>✅</span> 批改作业</el-menu-item>
+                        </template>
+                        <template v-if="role==='STUDENT'">
+                            <el-menu-item index="/myHw"><span>📓</span> 我的作业</el-menu-item>
+                        </template>
+                    </el-menu>
+                </div>
+                <div class="content">
+                    <router-view @viewGrading="goGrading"></router-view>
+                </div>
+            </div>
+        </div>`,
+    setup() {
+        const router = useRouter()
+        const route = useRoute()
         const userInfo = reactive(JSON.parse(localStorage.getItem('userInfo')||'{}'))
         const role = computed(() => userInfo.role || '')
         const roleTag = computed(() => ({ADMIN:'danger',TEACHER:'warning',STUDENT:'success'}[role.value]||''))
         const roleLabel = computed(() => ({ADMIN:'管理员',TEACHER:'教师',STUDENT:'学生'}[role.value]||''))
-        const activeMenu = ref('')
-        const defaults = {ADMIN:'dashboard',TEACHER:'myHomeworks',STUDENT:'myHw'}
-        const currentView = ref('AdminDashboard')
-        const viewMap = {
-            ADMIN: {dashboard:'AdminDashboard',teachers:'AdminTeachers',classes:'AdminClasses',students:'AdminStudents',questions:'AdminQuestions',knowledge:'AdminKnowledge',tcAdmin:'AdminTeachingClasses'},
-            TEACHER: {teachingClasses:'TeacherTeachingClasses',myHomeworks:'TeacherHomeworks',assignHw:'TeacherAssign',grading:'TeacherGrading'},
-            STUDENT: {myHw:'StudentHomeworks'}
-        }
-        const updateView = () => {
-            const m = viewMap[role.value]
-            if (m && m[activeMenu.value]) currentView.value = m[activeMenu.value]
-        }
-
-        const loginForm = reactive({username:'',password:''})
-        const loginRules = {username:[{required:true,message:'请输入用户名'}],password:[{required:true,message:'请输入密码'}]}
-        const loginFormRef = ref(null), loading = ref(false)
-
-        const doLogin = async () => {
-            if (!loginFormRef.value) return
-            await loginFormRef.value.validate(async valid => {
-                if (!valid) return
-                loading.value = true
-                try {
-                    const r = await api.login({username:loginForm.username,password:loginForm.password})
-                    const t = r.data.data.token
-                    localStorage.setItem('token', t); token.value = t
-                    try {
-                        const me = await axios.get('/api/auth/me')
-                        const u = {username:me.data.data.username, realName:me.data.data.realName, role:me.data.data.role}
-                        localStorage.setItem('userInfo', JSON.stringify(u))
-                        Object.assign(userInfo, u)
-                    } catch(e) {
-                        const u = {username:loginForm.username, realName:loginForm.username, role:r.data.data.role}
-                        localStorage.setItem('userInfo', JSON.stringify(u))
-                        Object.assign(userInfo, u)
-                    }
-                    activeMenu.value = defaults[userInfo.role] || 'dashboard'; updateView()
-                } catch(e) { $m(e.response?.data?.msg || '登录失败','error') } finally { loading.value = false }
-            })
-        }
-        const logout = () => { localStorage.clear(); token.value = ''; location.reload() }
-        const handleMenuSelect = idx => { activeMenu.value = idx; updateView() }
-        // 快捷导航
-        const goHomeworks = () => { activeMenu.value = 'myHomeworks'; updateView() }
-        const goGrading = () => { activeMenu.value = 'grading'; updateView() }
-
-        onMounted(() => { if (token.value) { activeMenu.value = defaults[role.value] || 'dashboard'; updateView() } })
-        return { token, userInfo, role, roleTag, roleLabel, activeMenu, currentView, loginForm, loginRules, loginFormRef, loading, doLogin, logout, handleMenuSelect, goHomeworks, goGrading }
+        const logout = () => { localStorage.clear(); router.push('/login') }
+        const goGrading = () => { router.push('/grading') }
+        return { userInfo, role, roleTag, roleLabel, route, logout, goGrading }
     }
 })
 
+// ======== 路由 ========
+const defaultPath = role => ({ADMIN:'/dashboard',TEACHER:'/myHomeworks',STUDENT:'/myHw'}[role] || '/login')
+
+const routes = [
+    { path: '/login', component: LoginView },
+    {
+        path: '/',
+        component: MainLayout,
+        redirect: () => defaultPath((JSON.parse(localStorage.getItem('userInfo')||'{}')).role),
+        children: [
+            { path: 'dashboard', component: AdminDashboard, meta: {roles:['ADMIN']} },
+            { path: 'teachers', component: AdminTeachers, meta: {roles:['ADMIN']} },
+            { path: 'classes', component: AdminClasses, meta: {roles:['ADMIN']} },
+            { path: 'students', component: AdminStudents, meta: {roles:['ADMIN']} },
+            { path: 'questions', component: AdminQuestions, meta: {roles:['ADMIN']} },
+            { path: 'knowledge', component: AdminKnowledge, meta: {roles:['ADMIN']} },
+            { path: 'tcAdmin', component: AdminTeachingClasses, meta: {roles:['ADMIN']} },
+            { path: 'teachingClasses', component: TeacherTeachingClasses, meta: {roles:['TEACHER']} },
+            { path: 'myHomeworks', component: TeacherHomeworks, meta: {roles:['TEACHER']} },
+            { path: 'assignHw', component: TeacherAssign, meta: {roles:['TEACHER']} },
+            { path: 'grading', component: TeacherGrading, meta: {roles:['TEACHER']} },
+            { path: 'myHw', component: StudentHomeworks, meta: {roles:['STUDENT']} },
+        ]
+    },
+    { path: '/:pathMatch(.*)*', redirect: '/' }
+]
+
+const router = createRouter({
+    history: createWebHistory(),
+    routes
+})
+
+// 登录守卫：未登录 → /login；已登录访问 /login → 默认页；角色不匹配 → 默认页
+router.beforeEach(to => {
+    const token = localStorage.getItem('token')
+    const role = (JSON.parse(localStorage.getItem('userInfo')||'{}')).role
+    if (to.path === '/login') {
+        return token ? defaultPath(role) : true
+    }
+    if (!token) return '/login'
+    if (to.meta.roles && !to.meta.roles.includes(role)) return defaultPath(role)
+    return true
+})
+
+const app = createApp({})
 app.use(ElementPlus)
+app.use(router)
 app.mount('#app')
 </script>
 </body>
