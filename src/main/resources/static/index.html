@@ -4,11 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>在线作业系统</title>
-    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
-    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-    <script src="https://unpkg.com/vue-router@4"></script>
-    <script src="https://unpkg.com/element-plus"></script>
-    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <!-- 本地 vendor（CDN 离线化：不依赖 unpkg 外网，国内网络/服务器部署均可用） -->
+    <link rel="stylesheet" href="/vendor/element-plus/index.css">
+    <script src="/vendor/vue.global.prod.js"></script>
+    <script src="/vendor/vue-router.global.js"></script>
+    <script src="/vendor/element-plus/index.full.min.js"></script>
+    <script src="/vendor/axios.min.js"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:'Microsoft YaHei',sans-serif;background:#f5f7fa}

@@ -47,7 +47,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/teacher/**").hasRole("TEACHER")
                 .requestMatchers("/api/student/**").hasRole("STUDENT")
                 // SPA history 路由页面路径（Vue Router，登录态由前端守卫控制，服务端仅提供 index.html）
-                .requestMatchers("/css/**", "/js/**", "/images/**").permitAll()
+                .requestMatchers("/css/**", "/js/**", "/images/**", "/vendor/**").permitAll()
                 .requestMatchers("/{path:^(?!api).*$}", "/{path:^(?!api).*$}/**").permitAll()
                 .anyRequest().authenticated()
             )

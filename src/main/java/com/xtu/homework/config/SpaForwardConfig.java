@@ -14,9 +14,10 @@ public class SpaForwardConfig implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
-        registry.addViewController("/{spring:[^\\.]*}")
-                .setViewName("forward:/index.html");
-        registry.addViewController("/{spring:[^\\.]*}/**{path:[^\\.]*}")
+        // SPA 路由（/login /teachers /myHomeworks 等，全部为单级无点路径）→ index.html
+        // 注意：不能用 /** 或 ** 后接内容（Spring 6 PathPattern 限制），且会劫持 /vendor 等静态资源；
+        // 带点路径（.js/.css/.png）由静态资源处理器服务，不受影响
+        registry.addViewController("/{spring:[^\\\\.]*}")
                 .setViewName("forward:/index.html");
     }
 }
