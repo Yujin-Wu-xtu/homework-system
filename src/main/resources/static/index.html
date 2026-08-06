@@ -1182,6 +1182,7 @@ const LoginView = defineComponent({
                 loading.value = true
                 try {
                     const r = await api.login({username:form.username,password:form.password})
+                    if (r.data.code !== 200) { $m(r.data.msg || '登录失败', 'error'); return }
                     const t = r.data.data.token
                     localStorage.setItem('token', t)
                     let u
