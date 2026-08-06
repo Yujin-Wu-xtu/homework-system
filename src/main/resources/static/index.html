@@ -203,7 +203,7 @@ const AdminTeachers = defineComponent({
         const load = async () => { try { const r = await api.teachers({page:1,size:100,keyword:keyword.value}); list.value = r.data.data.records } catch(e) { console.error(e) } }
         const showAdd = () => { Object.assign(form, {username:'',realName:'',phone:'',email:''}); isEdit.value = false; dialogVisible.value = true }
         const edit = row => { Object.assign(form, row); isEdit.value = true; dialogVisible.value = true }
-        const save = async () => { try { isEdit.value ? await api.updateTeacher(form.id, form) : await api.addTeacher(form); dialogVisible.value = false; load(); $m(isEdit.value?'修改成功':'新增成功') } catch(e) { $m(e.response?.data?.msg||'操作失败','error') } }
+        const save = async () => { try { isEdit.value ? await api.updateTeacher(form.id, form) : await api.addTeacher(form); dialogVisible.value = false; load(); $m(isEdit.value?'修改成功':'新增成功，初始密码 Admin123456，首次登录需修改') } catch(e) { $m(e.response?.data?.msg||'操作失败','error') } }
         const del = id => { $c('确定删除该教师？').then(async ()=>{ await api.deleteTeacher(id); load(); $m('已删除') }).catch(()=>{}) }
         const resetPwd = async id => { try { const r = await api.resetTeacherPwd(id); $m('新密码：'+r.data.data?.newPassword) } catch(e) { console.error(e) } }
         onMounted(load)
@@ -272,7 +272,7 @@ const AdminClasses = defineComponent({
                     const lines = d.errors.slice(0, 10).map(e => `第${e.row}行：${e.msg}`).join('\n')
                     ElementPlus.ElMessageBox.alert(`导入校验未通过（共 ${d.errors.length} 条错误），未导入任何学生：\n\n${lines}${d.errors.length > 10 ? `\n…其余 ${d.errors.length - 10} 条略` : ''}`, '导入排错', { type: 'error' })
                 } else {
-                    $m(`成功导入 ${d.imported} 名学生`)
+                    $m(`成功导入 ${d.imported} 名学生（初始密码 Admin123456，首次登录需修改）`)
                     viewStudents({id: currentClazzId.value})
                 }
             }).catch(e => $m(e.response?.data?.msg || '导入失败', 'error'))
@@ -338,7 +338,7 @@ const AdminStudents = defineComponent({
         const showAdd = () => { Object.assign(addForm, {username:'',realName:'',phone:'',email:''}); addVisible.value = true }
         const saveAdd = async () => {
             if (!addForm.username || !addForm.realName) return $m('学号和姓名必填','error')
-            try { await api.addStudent({clazzId: selectedClazzId.value, ...addForm}); addVisible.value = false; loadStudents(); $m('新增成功，初始密码为随机密码，学生首次登录需重置') } catch(e) { $m(e.response?.data?.msg||'新增失败','error') }
+            try { await api.addStudent({clazzId: selectedClazzId.value, ...addForm}); addVisible.value = false; loadStudents(); $m('新增成功，初始密码 Admin123456，首次登录需修改') } catch(e) { $m(e.response?.data?.msg||'新增失败','error') }
         }
         const showTransfer = row => { transferRow.value = row; transferToClazzId.value = null; transferVisible.value = true }
         const doTransfer = async () => {
@@ -1191,9 +1191,9 @@ const LoginView = defineComponent({
                 let u
                 try {
                     const me = await axios.get('/api/auth/me')
-                    u = {username:me.data.data.username, realName:me.data.data.realName, role:me.data.data.role}
+                    u = {username:me.data.data.username, realName:me.data.data.realName, role:me.data.data.role, pwdResetRequired: me.data.data.pwdResetRequired}
                 } catch(e) {
-                    u = {username:form.username, realName:form.username, role:r.data.data.role}
+                    u = {username:form.username, realName:form.username, role:r.data.data.role, pwdResetRequired: r.data.data.pwdResetRequired}
                 }
                 localStorage.setItem('userInfo', JSON.stringify(u))
                 router.push(defaultPath(u.role))
@@ -1293,8 +1293,9 @@ const MainLayout = defineComponent({
                 </div>
             </div>
         </div>
-        <!-- 个人中心弹窗（三角色共用）-->
-        <el-dialog title="🧑‍💼 个人中心" v-model="profileVisible" width="540px">
+        <!-- 个人中心弹窗（三角色共用；学生日常隐藏"修改密码"页签；首次登录强制改密时锁定弹窗）-->
+        <el-dialog :title="forcePwd ? '⚠️ 首次登录请修改初始密码' : '🧑‍💼 个人中心'" v-model="profileVisible" width="540px"
+                   :close-on-click-modal="!forcePwd" :show-close="!forcePwd" :close-on-press-escape="!forcePwd">
             <el-tabs v-model="profileTab">
                 <el-tab-pane label="基本信息" name="info">
                     <el-form :model="profileForm" label-width="80px">
@@ -1305,12 +1306,14 @@ const MainLayout = defineComponent({
                         <el-form-item><el-button type="primary" @click="saveProfile">保存</el-button></el-form-item>
                     </el-form>
                 </el-tab-pane>
-                <el-tab-pane label="修改密码" name="pwd">
+                <el-tab-pane label="修改密码" name="pwd" v-if="role !== 'STUDENT' || forcePwd">
+                    <el-alert v-if="forcePwd" type="warning" :closable="false" style="margin-bottom:12px"
+                              title="首次登录必须修改初始密码后才能正常使用系统"/>
                     <el-form :model="pwdForm" label-width="90px">
                         <el-form-item label="原密码"><el-input v-model="pwdForm.oldPassword" type="password" show-password/></el-form-item>
                         <el-form-item label="新密码"><el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="至少8位，含大小写字母和数字"/></el-form-item>
                         <el-form-item label="确认新密码"><el-input v-model="pwdForm.confirm" type="password" show-password/></el-form-item>
-                        <el-form-item><el-button type="primary" @click="savePwd">修改密码</el-button></el-form-item>
+                        <el-form-item><el-button type="primary" @click="savePwd">{{ forcePwd ? '确定并进入系统' : '修改密码' }}</el-button></el-form-item>
                     </el-form>
                 </el-tab-pane>
             </el-tabs>
@@ -1327,8 +1330,18 @@ const MainLayout = defineComponent({
         const goGrading = () => { router.push('/grading') }
         // 个人中心
         const profileVisible = ref(false), profileTab = ref('info')
+        const forcePwd = ref(false)
         const profileForm = reactive({realName:'', phone:'', email:''})
         const pwdForm = reactive({oldPassword:'', newPassword:'', confirm:''})
+        // 首次登录/密码被重置后强制修改（弹窗锁定不可关闭，改密成功后才可正常使用）
+        onMounted(() => {
+            if (userInfo.pwdResetRequired) {
+                forcePwd.value = true
+                profileVisible.value = true
+                profileTab.value = 'pwd'
+                $m('首次登录请先修改初始密码','warning')
+            }
+        })
         const openProfile = async () => {
             profileVisible.value = true; profileTab.value = 'info'
             Object.assign(profileForm, {realName: userInfo.realName||'', phone:'', email:''})
@@ -1346,9 +1359,16 @@ const MainLayout = defineComponent({
         }
         const savePwd = async () => {
             if (pwdForm.newPassword !== pwdForm.confirm) return $m('两次输入的新密码不一致','error')
-            try { await api.changePassword({oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword}); Object.assign(pwdForm,{oldPassword:'',newPassword:'',confirm:''}); $m('密码修改成功') } catch(e) { $m(e.response?.data?.msg||'修改失败','error') }
+            try {
+                await api.changePassword({oldPassword: pwdForm.oldPassword, newPassword: pwdForm.newPassword})
+                Object.assign(pwdForm,{oldPassword:'',newPassword:'',confirm:''})
+                userInfo.pwdResetRequired = false
+                localStorage.setItem('userInfo', JSON.stringify(userInfo))
+                if (forcePwd.value) { forcePwd.value = false; profileVisible.value = false }
+                $m('密码修改成功')
+            } catch(e) { $m(e.response?.data?.msg||'修改失败','error') }
         }
-        return { userInfo, role, roleTag, roleLabel, route, logout, goGrading, profileVisible, profileTab, profileForm, pwdForm, openProfile, saveProfile, savePwd }
+        return { userInfo, role, roleTag, roleLabel, route, logout, goGrading, profileVisible, profileTab, forcePwd, profileForm, pwdForm, openProfile, saveProfile, savePwd }
     }
 })
 

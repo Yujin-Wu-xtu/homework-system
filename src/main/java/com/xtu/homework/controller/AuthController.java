@@ -25,9 +25,12 @@ public class AuthController {
     public R login(@Valid @RequestBody LoginDto dto) {
         try {
             String token = userService.login(dto.getUsername(), dto.getPassword());
+            Long userId = jwtUtil.getUserId(token);
+            var user = userService.getById(userId);
             return R.ok().data(Map.of("token", token,
-                    "userId", jwtUtil.getUserId(token),
-                    "role", jwtUtil.getRole(token)));
+                    "userId", userId,
+                    "role", jwtUtil.getRole(token),
+                    "pwdResetRequired", user.getPwdResetRequired() != null && user.getPwdResetRequired()));
         } catch (RuntimeException e) {
             return R.unauthorized(e.getMessage());
         }
@@ -77,8 +80,17 @@ public class AuthController {
 
     @PutMapping("/password")
     public R changePassword(@RequestBody Map<String, String> body,
-                            @RequestAttribute("userId") Long userId) {
+                            @RequestAttribute("userId") Long userId,
+                            @RequestAttribute("role") String role) {
         try {
+            // 学生仅允许"首次登录强制改密"（pwd_reset_required=true 时）；日常不可自助改密
+            if ("STUDENT".equals(role)) {
+                var user = userService.getById(userId);
+                boolean forced = user.getPwdResetRequired() != null && user.getPwdResetRequired();
+                if (!forced) {
+                    return R.badRequest("学生账号不可自行修改密码，请联系管理员或任课教师重置");
+                }
+            }
             userService.changePassword(userId, body.get("oldPassword"), body.get("newPassword"));
             return R.ok("密码修改成功");
         } catch (RuntimeException e) {

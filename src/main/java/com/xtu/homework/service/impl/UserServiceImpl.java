@@ -38,6 +38,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserService {
 
+    /** 统一初始密码（管理员创建教师/导入创建学生时使用；首次登录强制修改） */
+    public static final String DEFAULT_PASSWORD = "Admin123456";
+
     private final UserDao userDao;
     private final AuditLogDao auditLogDao;
     private final ClazzDao clazzDao;
@@ -186,7 +189,7 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
     @Override
     public User addTeacher(User teacher) {
         teacher.setRole("TEACHER");
-        teacher.setPassword(passwordEncoder.encode(generateRandomPassword()));
+        teacher.setPassword(passwordEncoder.encode(DEFAULT_PASSWORD));
         teacher.setPwdResetRequired(true);
         teacher.setStatus("ACTIVE");
         userDao.insert(teacher);
@@ -205,7 +208,7 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
         if (exist != null) throw new RuntimeException("学号 " + student.getUsername() + " 已存在");
         student.setRole("STUDENT");
         student.setClazzId(clazzId);
-        student.setPassword(passwordEncoder.encode(generateRandomPassword()));
+        student.setPassword(passwordEncoder.encode(DEFAULT_PASSWORD));
         student.setPwdResetRequired(true);
         student.setStatus("ACTIVE");
         userDao.insert(student);
@@ -233,9 +236,8 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
             if (exist != null) continue;
             s.setRole("STUDENT");
             s.setClazzId(clazzId);
-            // 默认密码：学号后6位
-            String uname = s.getUsername();
-            s.setPassword(passwordEncoder.encode(uname.substring(Math.max(0, uname.length() - 6))));
+            // 统一初始密码（首次登录强制修改；账号用学号区分）
+            s.setPassword(passwordEncoder.encode(DEFAULT_PASSWORD));
             s.setPwdResetRequired(true);
             s.setStatus("ACTIVE");
             userDao.insert(s);

@@ -194,9 +194,10 @@ class UserServiceImplTest {
         assertEquals("STUDENT", saved.getRole());
         assertEquals("ACTIVE", saved.getStatus());
         assertEquals(1L, saved.getClazzId());
-        // 初始密码应为随机强密码（非学号后6位），且要求首次登录重置
+        // 初始密码统一为 Admin123456（用户确认的功能模型），且要求首次登录重置
         assertTrue(saved.getPwdResetRequired());
-        assertFalse(saved.getPassword().startsWith(saved.getUsername().substring(0, 6)));
+        assertTrue(saved.getPassword().startsWith("$2"));
+        assertTrue(userService.login(saved.getUsername(), "Admin123456") != null);
     }
 
     @Test
