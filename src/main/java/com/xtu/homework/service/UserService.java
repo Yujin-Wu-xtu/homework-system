@@ -13,6 +13,9 @@ public interface UserService extends IService<User> {
     String login(String username, String password);
     void changePassword(Long userId, String oldPwd, String newPwd);
     void updateProfile(Long userId, String realName, String phone, String email);
+
+    /** 邮箱注册：校验验证码 + 用户名/邮箱唯一性，注册为 STUDENT 角色 */
+    void registerByEmail(String username, String email, String password, String code);
     String resetPassword(Long userId);
     Page<User> listTeachers(int page, int size, String keyword);
     User addTeacher(User teacher);

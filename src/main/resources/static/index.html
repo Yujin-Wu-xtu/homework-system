@@ -60,7 +60,8 @@ const TYPE_MAP = {SINGLE_CHOICE:'单选题',MULTI_CHOICE:'多选题',TRUE_FALSE:
 const DIFF_MAP = {EASY:{label:'简单',type:'success'},MEDIUM:{label:'中等',type:'warning'},HARD:{label:'困难',type:'danger'}}
 
 const api = {
-    login: d => axios.post('/api/auth/login', d),
+    sendVerificationCode: d => axios.post('/api/auth/verification-code/send', d),
+    register: d => axios.post('/api/auth/register', d),
     profile: () => axios.get('/api/auth/me'),
     updateProfile: d => axios.put('/api/auth/profile', d),
     changePassword: d => axios.put('/api/auth/password', d),
@@ -1120,25 +1121,57 @@ const LoginView = defineComponent({
         <div class="login-container">
             <div class="login-card">
                 <h1>📚 在线作业系统</h1>
-                <p style="text-align:center;color:#909399;margin-bottom:20px">欢迎登录</p>
-                <el-form :model="form" :rules="rules" ref="formRef">
-                    <el-form-item prop="username">
-                        <el-input v-model="form.username" placeholder="用户名" size="large" clearable/>
-                    </el-form-item>
-                    <el-form-item prop="password">
-                        <el-input v-model="form.password" placeholder="密码" type="password" size="large" show-password @keyup.enter="doLogin"/>
-                    </el-form-item>
-                    <el-form-item>
-                        <el-button type="primary" size="large" style="width:100%" @click="doLogin" :loading="loading">登 录</el-button>
-                    </el-form-item>
-                </el-form>
-                <div style="text-align:center;color:#909399;font-size:12px">
-                    测试账号：admin / T2024001 / 20240001<br>密码统一：Admin123456
-                </div>
+                <el-tabs v-model="tab" stretch>
+                    <el-tab-pane label="登 录" name="login">
+                        <el-form :model="form" :rules="rules" ref="formRef">
+                            <el-form-item prop="username">
+                                <el-input v-model="form.username" placeholder="用户名" size="large" clearable/>
+                            </el-form-item>
+                            <el-form-item prop="password">
+                                <el-input v-model="form.password" placeholder="密码" type="password" size="large" show-password @keyup.enter="doLogin"/>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="primary" size="large" style="width:100%" @click="doLogin" :loading="loading">登 录</el-button>
+                            </el-form-item>
+                        </el-form>
+                        <div style="text-align:center;color:#909399;font-size:12px">
+                            测试账号：admin / T2024001 / 20240001<br>密码统一：Admin123456
+                        </div>
+                    </el-tab-pane>
+                    <el-tab-pane label="注 册" name="register">
+                        <el-form :model="regForm" :rules="regRules" ref="regFormRef">
+                            <el-form-item prop="username">
+                                <el-input v-model="regForm.username" placeholder="用户名（3-20位字母/数字/下划线）" size="large" clearable/>
+                            </el-form-item>
+                            <el-form-item prop="email">
+                                <el-input v-model="regForm.email" placeholder="邮箱（用于接收验证码）" size="large" clearable/>
+                            </el-form-item>
+                            <el-form-item prop="code">
+                                <div style="display:flex;width:100%;gap:8px">
+                                    <el-input v-model="regForm.code" placeholder="邮箱验证码" size="large" style="flex:1"/>
+                                    <el-button size="large" :disabled="countdown > 0 || regSending" @click="sendCode" style="width:140px">
+                                        {{ countdown > 0 ? countdown + 's 后重发' : '获取验证码' }}
+                                    </el-button>
+                                </div>
+                            </el-form-item>
+                            <el-form-item prop="password">
+                                <el-input v-model="regForm.password" placeholder="密码（至少8位，含大小写字母和数字）" type="password" size="large" show-password/>
+                            </el-form-item>
+                            <el-form-item prop="confirm">
+                                <el-input v-model="regForm.confirm" placeholder="确认密码" type="password" size="large" show-password/>
+                            </el-form-item>
+                            <el-form-item>
+                                <el-button type="success" size="large" style="width:100%" @click="doRegister" :loading="regLoading">注 册</el-button>
+                            </el-form-item>
+                        </el-form>
+                        <div style="text-align:center;color:#909399;font-size:12px">注册成功后将自动开通学生账号，可直接登录</div>
+                    </el-tab-pane>
+                </el-tabs>
             </div>
         </div>`,
     setup() {
         const router = useRouter()
+        const tab = ref('login')
         const form = reactive({username:'',password:''})
         const rules = {username:[{required:true,message:'请输入用户名'}],password:[{required:true,message:'请输入密码'}]}
         const formRef = ref(null), loading = ref(false)
@@ -1163,7 +1196,55 @@ const LoginView = defineComponent({
                 } catch(e) { $m(e.response?.data?.msg || '登录失败','error') } finally { loading.value = false }
             })
         }
-        return { form, rules, formRef, loading, doLogin }
+        // ===== 注册 =====
+        const regForm = reactive({username:'',email:'',code:'',password:'',confirm:''})
+        const regFormRef = ref(null), regLoading = ref(false), regSending = ref(false), countdown = ref(0)
+        let timer = null
+        const EMAIL_RE = /^[\w.+-]+@[\w-]+(\.[\w-]+)+$/
+        const regRules = {
+            username: [
+                {required:true,message:'请输入用户名'},
+                {pattern:/^[a-zA-Z0-9_]{3,20}$/,message:'3-20位字母/数字/下划线'}
+            ],
+            email: [
+                {required:true,message:'请输入邮箱'},
+                {pattern:EMAIL_RE,message:'邮箱格式不正确'}
+            ],
+            code: [{required:true,message:'请输入验证码'},{pattern:/^\d{6}$/,message:'验证码为6位数字'}],
+            password: [
+                {required:true,message:'请输入密码'},
+                {pattern:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/,message:'至少8位，含大小写字母和数字'}
+            ],
+            confirm: [
+                {required:true,message:'请确认密码'},
+                {validator:(rule,val,cb)=> val !== regForm.password ? cb(new Error('两次输入的密码不一致')) : cb(), trigger:'blur'}
+            ]
+        }
+        const sendCode = async () => {
+            if (!EMAIL_RE.test(regForm.email)) return $m('请先输入正确的邮箱','error')
+            regSending.value = true
+            try {
+                const r = await api.sendVerificationCode({email: regForm.email})
+                $m(r.data.msg || '验证码已发送','success')
+                countdown.value = 60
+                timer = setInterval(() => { if (--countdown.value <= 0) clearInterval(timer) }, 1000)
+            } catch(e) { $m(e.response?.data?.msg || '发送失败','error') } finally { regSending.value = false }
+        }
+        const doRegister = async () => {
+            if (!regFormRef.value) return
+            await regFormRef.value.validate(async valid => {
+                if (!valid) return
+                regLoading.value = true
+                try {
+                    const r = await api.register({username:regForm.username, email:regForm.email, password:regForm.password, code:regForm.code})
+                    $m(r.data.msg || '注册成功','success')
+                    tab.value = 'login'
+                    form.username = regForm.username
+                    Object.assign(regForm, {username:'',email:'',code:'',password:'',confirm:''})
+                } catch(e) { $m(e.response?.data?.msg || '注册失败','error') } finally { regLoading.value = false }
+            })
+        }
+        return { tab, form, rules, formRef, loading, doLogin, regForm, regRules, regFormRef, regLoading, regSending, countdown, sendCode, doRegister }
     }
 })
 

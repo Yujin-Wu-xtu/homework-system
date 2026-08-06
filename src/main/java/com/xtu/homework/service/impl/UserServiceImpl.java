@@ -10,6 +10,7 @@ import com.xtu.homework.entity.AuditLog;
 import com.xtu.homework.entity.Clazz;
 import com.xtu.homework.entity.User;
 import com.xtu.homework.service.UserService;
+import com.xtu.homework.service.VerificationCodeService;
 import com.xtu.homework.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
@@ -42,6 +43,7 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
     private final ClazzDao clazzDao;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
+    private final VerificationCodeService verificationCodeService;
     private static final int MAX_LOGIN_FAILS = 5;
     private static final int LOCK_MINUTES = 30;
 
@@ -102,6 +104,44 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
         user.setPassword(passwordEncoder.encode(newPwd));
         user.setPwdResetRequired(false);
         userDao.updateById(user);
+    }
+
+    @Override
+    @Transactional
+    public void registerByEmail(String username, String email, String password, String code) {
+        // 1. 校验邮箱验证码（错误/过期/已用都会抛异常）
+        verificationCodeService.verify("email", email, code);
+        // 2. 用户名格式与唯一性
+        String uname = username == null ? "" : username.trim();
+        if (!uname.matches("^[a-zA-Z0-9_]{3,20}$")) {
+            throw new RuntimeException("用户名需为 3-20 位字母、数字或下划线");
+        }
+        Long nameCount = userDao.selectCount(
+                new LambdaQueryWrapper<User>().eq(User::getUsername, uname));
+        if (nameCount != null && nameCount > 0) {
+            throw new RuntimeException("用户名已存在");
+        }
+        // 3. 邮箱唯一性
+        String mail = email == null ? "" : email.trim();
+        Long emailCount = userDao.selectCount(
+                new LambdaQueryWrapper<User>().eq(User::getEmail, mail));
+        if (emailCount != null && emailCount > 0) {
+            throw new RuntimeException("该邮箱已注册");
+        }
+        // 4. 密码复杂度校验（与改密码一致）
+        if (password == null || !password.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$")) {
+            throw new RuntimeException("密码需至少8位，包含大小写字母和数字");
+        }
+        // 5. 创建 STUDENT 账号（班级由管理员后续分配，默认姓名=用户名）
+        User user = new User();
+        user.setUsername(uname);
+        user.setPassword(passwordEncoder.encode(password));
+        user.setRealName(uname);
+        user.setEmail(mail);
+        user.setRole("STUDENT");
+        user.setStatus("ACTIVE");
+        user.setPwdResetRequired(false);
+        userDao.insert(user);
     }
 
     @Override

@@ -200,3 +200,17 @@ CREATE TABLE IF NOT EXISTS ai_material (
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_uploader (uploader_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI出题资源文件表';
+
+-- 邮箱注册验证码表
+CREATE TABLE IF NOT EXISTS verification_code (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    channel VARCHAR(20) NOT NULL COMMENT 'email/sms',
+    target VARCHAR(100) NOT NULL COMMENT '邮箱/手机号',
+    code_hash VARCHAR(64) NOT NULL COMMENT 'SHA-256(channel:target:code)',
+    expires_at DATETIME NOT NULL COMMENT '过期时间',
+    used_at DATETIME COMMENT '使用时间（NULL=未用）',
+    last_sent_at DATETIME NOT NULL COMMENT '最近发送时间',
+    send_count_today INT NOT NULL DEFAULT 0 COMMENT '当日已发次数',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_target (channel, target, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='邮箱注册验证码表';

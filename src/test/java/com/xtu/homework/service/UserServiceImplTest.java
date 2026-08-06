@@ -1,7 +1,10 @@
 package com.xtu.homework.service;
 
 import com.xtu.homework.HomeworkApplication;
+import com.xtu.homework.dao.VerificationCodeDao;
 import com.xtu.homework.entity.User;
+import com.xtu.homework.entity.VerificationCode;
+import com.xtu.homework.service.VerificationCodeService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -29,6 +32,12 @@ class UserServiceImplTest {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private VerificationCodeService verificationCodeService;
+
+    @Autowired
+    private VerificationCodeDao verificationCodeDao;
 
     private static Long testTeacherId;
 
@@ -292,5 +301,82 @@ class UserServiceImplTest {
         List<?> errors = (List<?>) result.get("errors");
         assertEquals(1, errors.size());
         assertTrue(((Map<?, ?>) errors.get(0)).get("msg").toString().contains("学号"));
+    }
+
+    // ========== 邮箱注册（registerByEmail）==========
+
+    @Test
+    @Order(30)
+    void testRegisterByEmailSuccess() {
+        String email = "reg_test_" + System.currentTimeMillis() + "@test.com";
+        String code = verificationCodeService.issue("email", email);
+        userService.registerByEmail("reguser", email, "RegUser123", code);
+        User u = userService.getOne(new LambdaQueryWrapper<User>().eq(User::getUsername, "reguser"));
+        assertNotNull(u, "注册用户应存在");
+        assertEquals("STUDENT", u.getRole(), "注册角色应为 STUDENT");
+        assertEquals(email, u.getEmail());
+        assertFalse(u.getPwdResetRequired() != null && u.getPwdResetRequired(), "注册用户不应要求重置密码");
+        // 验证码已标记使用：同码再注册应失败
+        assertThrows(RuntimeException.class, () ->
+                userService.registerByEmail("reguser2", email, "RegUser456", code));
+    }
+
+    @Test
+    @Order(31)
+    void testRegisterByEmailWrongCodeRejected() {
+        assertThrows(RuntimeException.class, () ->
+                userService.registerByEmail("reguser3", "wrong_code_" + System.currentTimeMillis() + "@test.com", "RegUser123", "000000"));
+    }
+
+    @Test
+    @Order(32)
+    void testRegisterByEmailDuplicateUsername() {
+        String email = "dup_name_" + System.currentTimeMillis() + "@test.com";
+        String code = verificationCodeService.issue("email", email);
+        userService.registerByEmail("dupuser", email, "RegUser123", code);
+        String email2 = "dup_name2_" + System.currentTimeMillis() + "@test.com";
+        String code2 = verificationCodeService.issue("email", email2);
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                userService.registerByEmail("dupuser", email2, "RegUser456", code2));
+        assertTrue(ex.getMessage().contains("已存在"));
+    }
+
+    @Test
+    @Order(33)
+    void testRegisterByEmailDuplicateEmail() {
+        String email = "dup_email_" + System.currentTimeMillis() + "@test.com";
+        String code = verificationCodeService.issue("email", email);
+        userService.registerByEmail("dupemail1", email, "RegUser123", code);
+        // 同邮箱再次注册：重置验证码 used_at 复用（避免 60s 冷却干扰），应报"邮箱已注册"
+        VerificationCode vc = verificationCodeDao.selectOne(
+                new LambdaQueryWrapper<VerificationCode>()
+                        .eq(VerificationCode::getTarget, email)
+                        .orderByDesc(VerificationCode::getCreatedAt)
+                        .last("LIMIT 1"));
+        // updateById 默认忽略 null 字段，用 UpdateWrapper 显式置空 used_at
+        verificationCodeDao.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<VerificationCode>()
+                .eq(VerificationCode::getId, vc.getId())
+                .set(VerificationCode::getUsedAt, null));
+        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+                userService.registerByEmail("dupemail2", email, "RegUser456", code));
+        assertTrue(ex.getMessage().contains("邮箱已注册"));
+    }
+
+    @Test
+    @Order(34)
+    void testRegisterByEmailWeakPasswordRejected() {
+        String email = "weak_pwd_" + System.currentTimeMillis() + "@test.com";
+        String code = verificationCodeService.issue("email", email);
+        assertThrows(RuntimeException.class, () ->
+                userService.registerByEmail("weakpwd", email, "weak", code));
+    }
+
+    @Test
+    @Order(35)
+    void testRegisterByEmailInvalidUsernameRejected() {
+        String email = "bad_name_" + System.currentTimeMillis() + "@test.com";
+        String code = verificationCodeService.issue("email", email);
+        assertThrows(RuntimeException.class, () ->
+                userService.registerByEmail("ab", email, "RegUser123", code));
     }
 }

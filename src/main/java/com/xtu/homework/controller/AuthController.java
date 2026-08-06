@@ -2,7 +2,9 @@ package com.xtu.homework.controller;
 
 import com.xtu.homework.common.R;
 import com.xtu.homework.dto.LoginDto;
+import com.xtu.homework.service.EmailCodeSender;
 import com.xtu.homework.service.UserService;
+import com.xtu.homework.service.VerificationCodeService;
 import com.xtu.homework.util.JwtUtil;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,8 @@ public class AuthController {
 
     private final UserService userService;
     private final JwtUtil jwtUtil;
+    private final VerificationCodeService verificationCodeService;
+    private final EmailCodeSender emailCodeSender;
 
     @PostMapping("/login")
     public R login(@Valid @RequestBody LoginDto dto) {
@@ -26,6 +30,43 @@ public class AuthController {
                     "role", jwtUtil.getRole(token)));
         } catch (RuntimeException e) {
             return R.unauthorized(e.getMessage());
+        }
+    }
+
+    /** 发送邮箱注册验证码（60s 冷却 / 单邮箱日限 10 次） */
+    @PostMapping("/verification-code/send")
+    public R sendVerificationCode(@RequestBody Map<String, String> body) {
+        String email = body == null ? null : body.get("email");
+        if (email == null || email.isBlank()) {
+            return R.badRequest("邮箱不能为空");
+        }
+        if (!email.trim().matches("^[\\w.+-]+@[\\w-]+(\\.[\\w-]+)+$")) {
+            return R.badRequest("邮箱格式不正确");
+        }
+        // 已注册邮箱不允许再发验证码
+        Long count = userService.count(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.xtu.homework.entity.User>()
+                .eq(com.xtu.homework.entity.User::getEmail, email.trim()));
+        if (count != null && count > 0) {
+            return R.badRequest("该邮箱已注册，请直接登录");
+        }
+        try {
+            String code = verificationCodeService.issue("email", email);
+            emailCodeSender.sendCode(email.trim(), code);
+            return R.ok("验证码已发送至 " + email.trim() + "，5 分钟内有效");
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
+    }
+
+    /** 邮箱注册：用户名/邮箱/密码/验证码，注册为 STUDENT */
+    @PostMapping("/register")
+    public R register(@RequestBody Map<String, String> body) {
+        try {
+            userService.registerByEmail(body.get("username"), body.get("email"),
+                    body.get("password"), body.get("code"));
+            return R.ok("注册成功，请登录");
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
         }
     }
 

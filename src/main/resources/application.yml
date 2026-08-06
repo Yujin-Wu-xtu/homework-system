@@ -11,6 +11,18 @@ spring:
     multipart:
       max-file-size: 20MB
       max-request-size: 25MB
+  # === 邮箱（注册验证码，QQ SMTP；授权码从环境变量 MAIL_AUTH_CODE 注入，勿入库）===
+  # 代理：本机 Clash 7890（smtp.qq.com 走 DIRECT 规则）；未开 Clash 时邮件发送会失败
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: 3062424485@qq.com
+    password: ${MAIL_AUTH_CODE:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.ssl.enable: true
+      mail.smtp.proxy.host: 127.0.0.1
+      mail.smtp.proxy.port: 7890
   # === MySQL（主数据库：本地 XAMPP MariaDB / 生产 Docker MySQL）===
   # 本机 XAMPP root 默认空密码；生产环境用环境变量注入: set DB_PASSWORD=xxx
   datasource:
