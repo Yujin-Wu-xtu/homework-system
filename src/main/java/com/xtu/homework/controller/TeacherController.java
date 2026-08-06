@@ -188,6 +188,26 @@ public class TeacherController {
         return R.ok().data(Map.of("resetCount", resets.size(), "students", resets));
     }
 
+    /** 重置教学班内单个学生密码（教师权限：仅限本教师教学班内的学生） */
+    @PutMapping("/teaching-classes/{id}/students/{sid}/reset-pwd")
+    public R resetTeachingClassStudentPwd(@RequestAttribute("userId") Long teacherId,
+                                          @PathVariable Long id, @PathVariable Long sid) {
+        TeachingClass exist = teachingClassDao.selectById(id);
+        if (exist == null || !exist.getTeacherId().equals(teacherId)) {
+            return R.badRequest("教学班不存在或无权操作");
+        }
+        // 校验该学生确实属于本教学班（自然班级 ∈ 教学班关联班级）
+        List<User> students = userDao.findStudentsByTeachingClassId(id);
+        boolean inClass = students.stream().anyMatch(s -> s.getId().equals(sid));
+        if (!inClass) {
+            return R.badRequest("该学生不在本教学班中，无法重置密码");
+        }
+        String newPwd = userService.resetPassword(sid);
+        return R.ok().data(Map.of("username", students.stream()
+                .filter(s -> s.getId().equals(sid)).findFirst().map(User::getUsername).orElse(""),
+                "newPassword", newPwd));
+    }
+
     // ---- 作业管理 ----
     @GetMapping("/homeworks")
     public R listHomeworks(@RequestAttribute("userId") Long teacherId,
@@ -202,7 +222,11 @@ public class TeacherController {
     @PostMapping("/homeworks")
     public R assignHomework(@RequestAttribute("userId") Long teacherId,
                             @Valid @RequestBody HomeworkAssignDto dto) {
-        return R.ok().data(homeworkService.assignHomework(teacherId, dto));
+        try {
+            return R.ok().data(homeworkService.assignHomework(teacherId, dto));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
     }
 
     @PutMapping("/homeworks/{id}")

@@ -123,6 +123,7 @@ const api = {
     teachingClassDetail: id => axios.get('/api/teacher/teaching-classes/' + id),
     teachingClassAddClasses: (id, d) => axios.post(`/api/teacher/teaching-classes/${id}/classes`, d),
     teachingClassRemoveClass: (id, cid) => axios.delete(`/api/teacher/teaching-classes/${id}/classes/${cid}`),
+    teachingClassResetStudentPwd: (id, sid) => axios.put(`/api/teacher/teaching-classes/${id}/students/${sid}/reset-pwd`),
     teachingClassStudents: id => axios.get('/api/teacher/teaching-classes/' + id + '/students'),
     resetTcStudentPwds: id => axios.put('/api/teacher/teaching-classes/' + id + '/reset-student-pwds'),
     teacherHomeworks: p => axios.get('/api/teacher/homeworks', {params: p}),
@@ -782,12 +783,17 @@ const TeacherTeachingClasses = defineComponent({
                 </el-table>
                 <template #footer><el-button @click="classesVisible=false">关闭</el-button></template>
             </el-dialog>
-            <el-dialog :title="'教学班学生 - ' + (currentRow?.name||'')" v-model="studentsVisible" width="560px">
+            <el-dialog :title="'教学班学生 - ' + (currentRow?.name||'')" v-model="studentsVisible" width="620px">
                 <el-button size="small" type="warning" style="margin-bottom:8px" @click="resetPwds">重置全部学生密码</el-button>
                 <el-table :data="students" border stripe max-height="320">
                     <el-table-column prop="username" label="学号" width="140"/>
                     <el-table-column prop="realName" label="姓名"/>
                     <el-table-column prop="clazzId" label="班级ID" width="80"/>
+                    <el-table-column label="操作" width="110">
+                        <template #default="{row}">
+                            <el-button size="small" type="warning" @click="resetOnePwd(row)">重置密码</el-button>
+                        </template>
+                    </el-table-column>
                 </el-table>
             </el-dialog>
         </div>`,
@@ -828,8 +834,14 @@ const TeacherTeachingClasses = defineComponent({
                 } catch(e) { $m(e.response?.data?.msg||'重置失败','error') }
             }).catch(()=>{})
         }
+        const resetOnePwd = async row => {
+            try {
+                const r = await api.teachingClassResetStudentPwd(currentRow.value.id, row.id)
+                $m(`已重置 ${row.realName}（${row.username}）密码：${r.data.data?.newPassword}`)
+            } catch(e) { $m(e.response?.data?.msg||'重置失败','error') }
+        }
         onMounted(async () => { load(); try { const r = await api.teacherClasses({page:1,size:100}); allClasses.value = r.data.data.records } catch(e) { console.error(e) } })
-        return { list, dialogVisible, isEdit, form, showAdd, edit, save, del, manageClasses, classesVisible, studentsVisible, currentRow, allClasses, selectedClazzIds, tcClasses, students, addClasses, removeClass, viewStudents, resetPwds }
+        return { list, dialogVisible, isEdit, form, showAdd, edit, save, del, manageClasses, classesVisible, studentsVisible, currentRow, allClasses, selectedClazzIds, tcClasses, students, addClasses, removeClass, viewStudents, resetPwds, resetOnePwd }
     }
 })
 
@@ -1038,7 +1050,7 @@ const StudentHomeworks = defineComponent({
                     <el-tab-pane label="待完成" name="new"/>
                     <el-tab-pane label="已完成" name="history"/>
                 </el-tabs>
-                <el-table :data="filteredList" border stripe v-loading="loading">
+                <el-table :data="filteredList" border stripe v-loading="loading" :empty-text="tab==='new' ? '暂无作业。教师发布作业后，需先将你的自然班级加入对应教学班' : '暂无已完成作业'">
                     <el-table-column prop="title" label="作业名称"/>
                     <el-table-column prop="deadline" label="截止时间" width="180"><template #default="{row}">{{formatD(row.deadline)}}</template></el-table-column>
                     <el-table-column prop="status" label="状态" width="100"><template #default="{row}"><el-tag :type="statusTag(row.status)" size="small">{{statusLabel(row.status)}}</el-tag></template></el-table-column>

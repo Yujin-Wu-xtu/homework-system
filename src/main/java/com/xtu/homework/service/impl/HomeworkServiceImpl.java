@@ -64,6 +64,13 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
 
         // 3. 为教学班的所有学生初始化提交记录
         List<User> students = userDao.findStudentsByTeachingClassId(dto.getTeachingClassId());
+        if (students.isEmpty()) {
+            // 回滚已创建的数据：先删题目关联（外键），再删作业
+            hwQuestionDao.delete(new LambdaQueryWrapper<HomeworkQuestion>()
+                    .eq(HomeworkQuestion::getHomeworkId, hw.getId()));
+            homeworkDao.deleteById(hw.getId());
+            throw new RuntimeException("该教学班尚未包含任何学生（请先在'教学班管理'中拉入自然班级），发布后学生将看不到此作业");
+        }
         for (User student : students) {
             Submission sub = new Submission();
             sub.setHomeworkId(hw.getId());
