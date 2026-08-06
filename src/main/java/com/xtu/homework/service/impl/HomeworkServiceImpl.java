@@ -7,6 +7,7 @@ import com.xtu.homework.dao.*;
 import com.xtu.homework.dto.HomeworkAssignDto;
 import com.xtu.homework.entity.*;
 import com.xtu.homework.service.HomeworkService;
+import com.xtu.homework.service.StudentHomeworkAccessService;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -34,6 +35,7 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
     private final UserDao userDao;
     private final QuestionDao questionDao;
     private final QuestionOptionDao questionOptionDao;
+    private final StudentHomeworkAccessService studentHomeworkAccessService;
 
     @Override
     @Transactional
@@ -171,6 +173,8 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
 
     @Override
     public Page<Homework> listStudentHomeworks(Long studentId, int page, int size) {
+        List<Long> currentTeachingClassIds = studentHomeworkAccessService.currentTeachingClassIds(studentId);
+        if (currentTeachingClassIds.isEmpty()) return new Page<>();
         LambdaQueryWrapper<Submission> subQw = new LambdaQueryWrapper<>();
         subQw.eq(Submission::getStudentId, studentId);
         List<Submission> subs = submissionDao.selectList(subQw);
@@ -179,6 +183,7 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
         Page<Homework> result = homeworkDao.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<Homework>()
                         .in(Homework::getId, hwIds)
+                        .in(Homework::getTeachingClassId, currentTeachingClassIds)
                         .orderByDesc(Homework::getCreateTime));
         // 学生视角状态：status 覆盖为该学生的提交状态（NOT_SUBMITTED/SUBMITTED/GRADED），
         // 而非作业全局状态（PUBLISHED/CLOSED）——前端"待完成/已完成"过滤与操作按钮均按提交状态判断，
@@ -194,8 +199,7 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
 
     @Override
     public Map<String, Object> getHomeworkDetail(Long homeworkId, Long studentId) {
-        Homework hw = homeworkDao.selectById(homeworkId);
-        if (hw == null) throw new RuntimeException("作业不存在");
+        Homework hw = studentHomeworkAccessService.requireAccess(homeworkId, studentId);
 
         List<HomeworkQuestion> hqList = hwQuestionDao.selectList(
                 new LambdaQueryWrapper<HomeworkQuestion>()

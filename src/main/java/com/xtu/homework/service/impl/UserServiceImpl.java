@@ -300,8 +300,8 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
         User student = userDao.selectById(studentId);
         student.setClazzId(toClazzId);
         userDao.updateById(student);
-        // 转班 = 进入新自然班 → 自动补新班关联教学班已发布作业的提交记录
-        // （旧教学班的已有提交记录保留，作为历史作业；新教学班的作业立即可见）
+        // 转班 = 进入新自然班 → 自动补新班关联教学班已发布作业的提交记录。
+        // 旧 submission 保留供教师审计，但学生端按当前自然班动态鉴权，不再可见或可提交旧班作业。
         syncStudentToTeachingClasses(studentId, toClazzId);
     }
 

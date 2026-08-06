@@ -9,6 +9,7 @@ import com.xtu.homework.entity.Submission;
 import com.xtu.homework.entity.SubmissionAnswer;
 import com.xtu.homework.service.HomeworkService;
 import com.xtu.homework.service.SubmissionService;
+import com.xtu.homework.service.StudentHomeworkAccessService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,6 +27,7 @@ public class StudentController {
     private final SubmissionService submissionService;
     private final SubmissionDao submissionDao;
     private final SubmissionAnswerDao submissionAnswerDao;
+    private final StudentHomeworkAccessService studentHomeworkAccessService;
 
     @GetMapping("/homeworks")
     public R listHomeworks(@RequestAttribute("userId") Long studentId,
@@ -37,20 +39,31 @@ public class StudentController {
     @GetMapping("/homeworks/{id}")
     public R getHomeworkDetail(@PathVariable Long id,
                                @RequestAttribute("userId") Long studentId) {
-        return R.ok().data(homeworkService.getHomeworkDetail(id, studentId));
+        try {
+            return R.ok().data(homeworkService.getHomeworkDetail(id, studentId));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
     }
 
     @PostMapping("/homeworks/{id}/submit")
     public R submit(@PathVariable Long id,
                     @RequestAttribute("userId") Long studentId,
                     @Valid @RequestBody SubmissionDto dto) {
-        dto.setHomeworkId(id);
-        return R.ok().data(submissionService.submit(studentId, dto));
+        try {
+            dto.setHomeworkId(id);
+            return R.ok().data(submissionService.submit(studentId, dto));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
     }
 
     @GetMapping("/homeworks/{id}/result")
     public R getResult(@PathVariable Long id,
                        @RequestAttribute("userId") Long studentId) {
+        if (!studentHomeworkAccessService.canAccess(id, studentId)) {
+            return R.badRequest("该作业不属于当前教学班，无法访问");
+        }
         Submission sub = submissionDao.selectOne(
                 new LambdaQueryWrapper<Submission>()
                         .eq(Submission::getHomeworkId, id)

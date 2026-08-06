@@ -56,6 +56,12 @@ class UserServiceImplTest {
     @Autowired
     private TeachingClassClazzDao teachingClassClazzDao;
 
+    @Autowired
+    private HomeworkService homeworkService;
+
+    @Autowired
+    private SubmissionService submissionService;
+
     private static Long testTeacherId;
 
     // ========== 登录测试 ==========
@@ -454,5 +460,41 @@ class UserServiceImplTest {
                         .eq(Submission::getHomeworkId, hw2.getId())
                         .eq(Submission::getStudentId, saved.getId()));
         assertEquals(1L, cnt3, "转班学生应自动获得新自然班关联教学班已发布作业的提交记录");
+
+        // 旧班历史 submission 保留，但学生端权限必须按当前自然班动态计算。
+        TeachingClassClazz oldLink = new TeachingClassClazz();
+        oldLink.setTeachingClassId(998L);
+        oldLink.setClazzId(1L);
+        teachingClassClazzDao.insert(oldLink);
+        Homework oldHw = new Homework();
+        oldHw.setTitle("转班后不可见的旧班作业-" + System.currentTimeMillis());
+        oldHw.setTeachingClassId(998L);
+        oldHw.setTeacherId(2L);
+        oldHw.setDeadline(LocalDateTime.now().plusDays(7));
+        oldHw.setTotalScore(BigDecimal.TEN);
+        oldHw.setStatus("PUBLISHED");
+        oldHw.setQuestionLocked(false);
+        homeworkDao.insert(oldHw);
+        Submission oldSub = new Submission();
+        oldSub.setHomeworkId(oldHw.getId());
+        oldSub.setStudentId(saved.getId());
+        oldSub.setStatus("NOT_SUBMITTED");
+        submissionDao.insert(oldSub);
+
+        var currentPage = homeworkService.listStudentHomeworks(saved.getId(), 1, 100);
+        assertFalse(currentPage.getRecords().stream().anyMatch(h -> h.getId().equals(oldHw.getId())),
+                "转班后旧教学班作业不应继续出现在学生列表");
+        assertTrue(currentPage.getRecords().stream().anyMatch(h -> h.getId().equals(hw2.getId())),
+                "转班后新教学班作业应立即可见");
+        RuntimeException detailError = assertThrows(RuntimeException.class,
+                () -> homeworkService.getHomeworkDetail(oldHw.getId(), saved.getId()));
+        assertTrue(detailError.getMessage().contains("不属于当前教学班"));
+
+        com.xtu.homework.dto.SubmissionDto submitDto = new com.xtu.homework.dto.SubmissionDto();
+        submitDto.setHomeworkId(oldHw.getId());
+        submitDto.setAnswers(List.of());
+        RuntimeException submitError = assertThrows(RuntimeException.class,
+                () -> submissionService.submit(saved.getId(), submitDto));
+        assertTrue(submitError.getMessage().contains("不属于当前教学班"));
     }
 }

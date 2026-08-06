@@ -7,6 +7,7 @@ import com.xtu.homework.dao.*;
 import com.xtu.homework.dto.SubmissionDto;
 import com.xtu.homework.entity.*;
 import com.xtu.homework.service.SubmissionService;
+import com.xtu.homework.service.StudentHomeworkAccessService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,12 +35,12 @@ public class SubmissionServiceImpl extends ServiceImpl<SubmissionDao, Submission
     private final HomeworkQuestionDao hwQuestionDao;
     private final QuestionDao questionDao;
     private final UserDao userDao;
+    private final StudentHomeworkAccessService studentHomeworkAccessService;
 
     @Override
     @Transactional
     public Submission submit(Long studentId, SubmissionDto dto) {
-        Homework hw = homeworkDao.selectById(dto.getHomeworkId());
-        if (hw == null) throw new RuntimeException("作业不存在");
+        Homework hw = studentHomeworkAccessService.requireAccess(dto.getHomeworkId(), studentId);
         if (LocalDateTime.now().isAfter(hw.getDeadline())) {
             throw new RuntimeException("已超过提交截止时间");
         }
