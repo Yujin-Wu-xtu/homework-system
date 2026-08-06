@@ -140,6 +140,36 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
     }
 
     @Override
+    public User addStudent(Long clazzId, User student) {
+        Clazz clazz = clazzDao.selectById(clazzId);
+        if (clazz == null) throw new RuntimeException("班级不存在");
+        if (student.getUsername() == null || student.getUsername().isBlank()) {
+            throw new RuntimeException("学号不能为空");
+        }
+        User exist = userDao.selectOne(
+                new LambdaQueryWrapper<User>().eq(User::getUsername, student.getUsername()));
+        if (exist != null) throw new RuntimeException("学号 " + student.getUsername() + " 已存在");
+        student.setRole("STUDENT");
+        student.setClazzId(clazzId);
+        student.setPassword(passwordEncoder.encode(generateRandomPassword()));
+        student.setPwdResetRequired(true);
+        student.setStatus("ACTIVE");
+        userDao.insert(student);
+        return student;
+    }
+
+    @Override
+    public void deleteStudent(Long studentId) {
+        User student = userDao.selectById(studentId);
+        if (student == null || !"STUDENT".equals(student.getRole())) {
+            throw new RuntimeException("学生不存在");
+        }
+        // 软删除：置 DISABLED，保留历史提交记录的外键完整性
+        student.setStatus("DISABLED");
+        userDao.updateById(student);
+    }
+
+    @Override
     @Transactional
     public int importStudents(Long clazzId, List<User> students) {
         int count = 0;

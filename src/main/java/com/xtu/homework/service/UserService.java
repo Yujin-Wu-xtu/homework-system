@@ -14,6 +14,8 @@ public interface UserService extends IService<User> {
     String resetPassword(Long userId);
     Page<User> listTeachers(int page, int size, String keyword);
     User addTeacher(User teacher);
+    User addStudent(Long clazzId, User student);
+    void deleteStudent(Long studentId);
     int importStudents(Long clazzId, List<User> students);
     void transferStudent(Long studentId, Long fromClazzId, Long toClazzId);
     List<Clazz> importClasses(MultipartFile file);

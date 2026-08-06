@@ -164,6 +164,31 @@ public class AdminController {
         }
     }
 
+    @PostMapping("/students")
+    public R addStudent(@RequestBody Map<String, Object> body) {
+        try {
+            Long clazzId = ((Number) body.get("clazzId")).longValue();
+            User s = new User();
+            s.setUsername((String) body.get("username"));
+            s.setRealName((String) body.get("realName"));
+            s.setPhone((String) body.get("phone"));
+            s.setEmail((String) body.get("email"));
+            return R.ok().data(userService.addStudent(clazzId, s));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/students/{id}")
+    public R deleteStudent(@PathVariable Long id) {
+        try {
+            userService.deleteStudent(id);
+            return R.ok("学生已删除（账号禁用）");
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
+    }
+
     // ---- 题库管理 ----
     @GetMapping("/questions")
     public R listQuestions(@RequestParam(defaultValue = "1") int page,
@@ -234,6 +259,15 @@ public class AdminController {
     public R checkDuplicate(@RequestBody Map<String, String> body) {
         return R.ok().data(questionService.checkDuplicate(
                 body.get("content"), body.get("type")));
+    }
+
+    @PostMapping("/questions/import")
+    public R importQuestions(@RequestParam("file") MultipartFile file) {
+        try {
+            return R.ok().data(questionService.importQuestionsFromExcel(file));
+        } catch (Exception e) {
+            return R.badRequest("导入失败: " + e.getMessage());
+        }
     }
 
     @PutMapping("/questions/{id}/status")

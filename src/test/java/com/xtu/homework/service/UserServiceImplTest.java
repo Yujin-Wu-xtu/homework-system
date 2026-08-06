@@ -122,4 +122,58 @@ class UserServiceImplTest {
         assertDoesNotThrow(() ->
                 userService.transferStudent(3L, 2L, 1L));
     }
+
+    // ========== 学生新增 / 删除 ==========
+
+    @Test
+    @Order(11)
+    void testAddStudent() {
+        User s = new User();
+        s.setUsername("S_test_" + System.currentTimeMillis());
+        s.setRealName("测试学生");
+        User saved = userService.addStudent(1L, s);
+        assertNotNull(saved.getId());
+        assertEquals("STUDENT", saved.getRole());
+        assertEquals("ACTIVE", saved.getStatus());
+        assertEquals(1L, saved.getClazzId());
+        // 初始密码应为随机强密码（非学号后6位），且要求首次登录重置
+        assertTrue(saved.getPwdResetRequired());
+        assertFalse(saved.getPassword().startsWith(saved.getUsername().substring(0, 6)));
+    }
+
+    @Test
+    @Order(12)
+    void testAddStudentDuplicateUsername() {
+        User s = new User();
+        s.setUsername("20240001"); // 与初始数据张三重复
+        s.setRealName("重复学号学生");
+        assertThrows(RuntimeException.class, () -> userService.addStudent(1L, s));
+    }
+
+    @Test
+    @Order(13)
+    void testAddStudentNonexistentClass() {
+        User s = new User();
+        s.setUsername("S_noclass_" + System.currentTimeMillis());
+        s.setRealName("无班级学生");
+        assertThrows(RuntimeException.class, () -> userService.addStudent(99999L, s));
+    }
+
+    @Test
+    @Order(14)
+    void testDeleteStudent() {
+        User s = new User();
+        s.setUsername("S_del_" + System.currentTimeMillis());
+        s.setRealName("待删除学生");
+        User saved = userService.addStudent(1L, s);
+        userService.deleteStudent(saved.getId());
+        User after = userService.getById(saved.getId());
+        assertEquals("DISABLED", after.getStatus(), "删除应为软删（禁用账号）");
+    }
+
+    @Test
+    @Order(15)
+    void testDeleteNonexistentStudent() {
+        assertThrows(RuntimeException.class, () -> userService.deleteStudent(99999L));
+    }
 }

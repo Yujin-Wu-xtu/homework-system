@@ -3,11 +3,20 @@ package com.xtu.homework.service;
 import com.xtu.homework.HomeworkApplication;
 import com.xtu.homework.entity.Question;
 import com.xtu.homework.entity.QuestionOption;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -158,5 +167,56 @@ class QuestionServiceImplTest {
         // which calls addQuestion internally - actually it does validate
         int count = questionService.batchImport(List.of(q1, q2));
         assertEquals(2, count);
+    }
+
+    @Test
+    @Order(11)
+    void testImportQuestionsFromExcel() throws Exception {
+        // 构造 Excel 模板：题型/题干/选项A-D/答案/难度/分值
+        // 第3行故意与初始数据"以下哪种数据结构是线性结构？"重复，验证查重跳过
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        try (Workbook wb = new XSSFWorkbook()) {
+            Sheet sheet = wb.createSheet("题目");
+            String[] header = {"题型", "题干", "选项A", "选项B", "选项C", "选项D", "答案", "难度", "分值"};
+            Row h = sheet.createRow(0);
+            for (int i = 0; i < header.length; i++) h.createCell(i).setCellValue(header[i]);
+
+            String[][] rows = {
+                    {"单选题", "单元测试Excel导入单选：算法的时间复杂度主要取决于什么？", "输入规模", "代码行数", "编译器", "运行环境", "B", "简单", "5"},
+                    {"判断题", "单元测试Excel导入判断：栈是先进先出结构。", "", "", "", "", "错", "简单", "2"},
+                    {"单选题", "以下哪种数据结构是线性结构？", "树", "图", "线性表", "集合", "C", "简单", "5"},
+                    {"问答题", "单元测试Excel导入问答：简述二叉树和树的区别。", "", "", "", "", "二叉树每个节点最多两个孩子；树无此限制。", "中等", "10"},
+            };
+            for (int i = 0; i < rows.length; i++) {
+                Row r = sheet.createRow(i + 1);
+                for (int j = 0; j < rows[i].length; j++) {
+                    if (rows[i][j] != null && !rows[i][j].isEmpty()) r.createCell(j).setCellValue(rows[i][j]);
+                }
+            }
+            wb.write(bos);
+        }
+        MultipartFile file = new MockMultipartFile("file", "questions.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bos.toByteArray());
+
+        Map<String, Object> result = questionService.importQuestionsFromExcel(file);
+        assertEquals(3, result.get("imported"), "应成功导入3道（重复题跳过）");
+        assertEquals(0, result.get("failed"));
+        assertTrue(((List<?>) result.get("duplicates")).size() >= 1, "应检测到至少1道重复题");
+        assertEquals(0, ((List<?>) result.get("errors")).size());
+
+        // 验证导入的判断题答案规范化：错 → 错
+        Question tf = questionService.getOne(new LambdaQueryWrapper<Question>()
+                .eq(Question::getContent, "单元测试Excel导入判断：栈是先进先出结构。"));
+        assertNotNull(tf);
+        assertEquals("错", tf.getCorrectAnswer());
+        assertEquals("TRUE_FALSE", tf.getType());
+
+        // 验证导入的选择题选项已写入
+        Question sc = questionService.getOne(new LambdaQueryWrapper<Question>()
+                .eq(Question::getContent, "单元测试Excel导入单选：算法的时间复杂度主要取决于什么？"));
+        assertNotNull(sc);
+        List<QuestionOption> opts = questionService.getOptions(sc.getId());
+        assertEquals(4, opts.size());
+        assertEquals("A", opts.get(0).getLabel());
     }
 }

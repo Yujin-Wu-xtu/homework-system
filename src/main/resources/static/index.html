@@ -131,6 +131,8 @@ const api = {
     classStudents: (id, p) => axios.get('/api/admin/classes/' + id + '/students', {params: p}),
     transferStudent: (cid, sid, d) => axios.put(`/api/admin/classes/${cid}/students/${sid}/transfer`, d),
     importStudents: (file, clazzId) => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/students/import?clazzId=' + clazzId, fd) },
+    addStudent: d => axios.post('/api/admin/students', d),
+    deleteStudent: id => axios.delete('/api/admin/students/' + id),
     // Admin - Questions
     questions: p => axios.get('/api/admin/questions', {params: p}),
     addQuestion: d => axios.post('/api/admin/questions', d),
@@ -139,6 +141,7 @@ const api = {
     questionOptions: id => axios.get('/api/admin/questions/' + id + '/options'),
     checkDuplicate: d => axios.post('/api/admin/questions/check-duplicate', d),
     toggleQuestion: id => axios.put('/api/admin/questions/' + id + '/status'),
+    importQuestions: file => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/questions/import', fd) },
     // Admin - Knowledge Points
     knowledgePoints: k => axios.get('/api/admin/knowledge-points', {params: {keyword: k || ''}}),
     addKnowledgePoint: d => axios.post('/api/admin/knowledge-points', d),
@@ -299,7 +302,9 @@ const AdminClasses = defineComponent({
 // ======== Admin Students ========
 const AdminStudents = defineComponent({
     template: `
-        <div class="section-card"><h3>学生管理</h3>
+        <div class="section-card"><h3>学生管理
+            <el-button type="primary" size="small" :disabled="!selectedClazzId" @click="showAdd">新增学生</el-button>
+        </h3>
             <el-form :inline="true"><el-form-item label="选择班级">
                 <el-select v-model="selectedClazzId" placeholder="请选择班级" @change="loadStudents" clearable size="small" style="width:220px">
                     <el-option v-for="c in classList" :key="c.id" :label="c.name" :value="c.id"/>
@@ -311,27 +316,65 @@ const AdminStudents = defineComponent({
                 <el-table-column prop="phone" label="手机号" width="140"/>
                 <el-table-column prop="email" label="邮箱"/>
                 <el-table-column prop="status" label="状态" width="80">
-                    <template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'danger'" size="small">{{row.status}}</el-tag></template>
+                    <template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'danger'" size="small">{{row.status==='ACTIVE'?'正常':'禁用'}}</el-tag></template>
                 </el-table-column>
-                <el-table-column label="操作" width="120">
-                    <template #default="{row}"><el-button size="small" type="warning" @click="resetPwd(row.id)">重置密码</el-button></template>
+                <el-table-column label="操作" width="280">
+                    <template #default="{row}">
+                        <el-button size="small" @click="showTransfer(row)">转班</el-button>
+                        <el-button size="small" type="warning" @click="resetPwd(row.id)">重置密码</el-button>
+                        <el-button size="small" type="danger" @click="del(row)">删除</el-button>
+                    </template>
                 </el-table-column>
             </el-table>
             <p v-else style="color:#909399">请先选择一个班级查看学生</p>
+            <el-dialog title="新增学生" v-model="addVisible" width="460px">
+                <el-form :model="addForm" label-width="80px">
+                    <el-form-item label="学号"><el-input v-model="addForm.username" placeholder="必填，如 20240007"/></el-form-item>
+                    <el-form-item label="姓名"><el-input v-model="addForm.realName" placeholder="必填"/></el-form-item>
+                    <el-form-item label="手机号"><el-input v-model="addForm.phone"/></el-form-item>
+                    <el-form-item label="邮箱"><el-input v-model="addForm.email"/></el-form-item>
+                </el-form>
+                <template #footer><el-button @click="addVisible=false">取消</el-button><el-button type="primary" @click="saveAdd">保存</el-button></template>
+            </el-dialog>
+            <el-dialog title="学生转班" v-model="transferVisible" width="420px">
+                <p style="margin:0 0 8px">{{ transferRow?.realName }}（{{ transferRow?.username }}）转到：</p>
+                <el-select v-model="transferToClazzId" placeholder="选择目标班级" style="width:100%">
+                    <el-option v-for="c in classList" :key="c.id" :label="c.name" :value="c.id"/>
+                </el-select>
+                <template #footer><el-button @click="transferVisible=false">取消</el-button><el-button type="primary" :disabled="!transferToClazzId" @click="doTransfer">确定转班</el-button></template>
+            </el-dialog>
         </div>`,
     setup() {
         const classList = ref([]), selectedClazzId = ref(null), students = ref([])
+        const addVisible = ref(false), addForm = reactive({username:'',realName:'',phone:'',email:''})
+        const transferVisible = ref(false), transferRow = ref(null), transferToClazzId = ref(null)
         onMounted(async () => { try { const r = await api.classes({page:1,size:100}); classList.value = r.data.data.records } catch(e) { console.error(e) } })
         const loadStudents = async () => { if (!selectedClazzId.value) return; try { const r = await api.classStudents(selectedClazzId.value, {page:1,size:200}); students.value = r.data.data.records } catch(e) { console.error(e) } }
         const resetPwd = async id => { try { const r = await api.resetStudentPwd(id); $m('新密码：'+r.data.data?.newPassword) } catch(e) { console.error(e) } }
-        return { classList, selectedClazzId, students, loadStudents, resetPwd }
+        const showAdd = () => { Object.assign(addForm, {username:'',realName:'',phone:'',email:''}); addVisible.value = true }
+        const saveAdd = async () => {
+            if (!addForm.username || !addForm.realName) return $m('学号和姓名必填','error')
+            try { await api.addStudent({clazzId: selectedClazzId.value, ...addForm}); addVisible.value = false; loadStudents(); $m('新增成功，初始密码为随机密码，学生首次登录需重置') } catch(e) { $m(e.response?.data?.msg||'新增失败','error') }
+        }
+        const showTransfer = row => { transferRow.value = row; transferToClazzId.value = null; transferVisible.value = true }
+        const doTransfer = async () => {
+            try { await api.transferStudent(selectedClazzId.value, transferRow.value.id, {toClazzId: transferToClazzId.value}); transferVisible.value = false; loadStudents(); $m('转班成功') } catch(e) { $m(e.response?.data?.msg||'转班失败','error') }
+        }
+        const del = row => { $c(`确定删除学生 ${row.realName}（${row.username}）？删除后账号将被禁用`).then(async ()=>{ await api.deleteStudent(row.id); loadStudents(); $m('已删除') }).catch(()=>{}) }
+        return { classList, selectedClazzId, students, loadStudents, resetPwd, addVisible, addForm, showAdd, saveAdd, transferVisible, transferRow, transferToClazzId, showTransfer, doTransfer, del }
     }
 })
 
 // ======== Admin Questions ========
 const AdminQuestions = defineComponent({
     template: `
-        <div class="section-card"><h3>题库管理 <el-button type="primary" size="small" @click="showAdd">新增题目</el-button></h3>
+        <div class="section-card"><h3>题库管理
+            <el-button type="primary" size="small" @click="showAdd">新增题目</el-button>
+            <el-upload :show-file-list="false" :before-upload="f=>uploadQuestions(f)" accept=".xlsx" style="display:inline-block;margin-left:8px">
+                <el-button type="success" size="small">批量导入Excel</el-button>
+            </el-upload>
+            <span style="color:#909399;font-size:12px;margin-left:8px">模板列：题型(单选/多选/判断/问答)、题干、选项A、选项B、选项C、选项D、答案(客观题必填，问答题填参考答案)、难度、分值</span>
+        </h3>
             <el-input v-model="keyword" placeholder="搜索题目" size="small" style="width:240px;margin-right:8px" clearable/>
             <el-select v-model="filterType" placeholder="题型" size="small" style="width:140px;margin-right:8px" clearable>
                 <el-option v-for="(v,k) in TYPE_MAP" :key="k" :label="v" :value="k"/>
@@ -389,10 +432,34 @@ const AdminQuestions = defineComponent({
         const save = async () => {
             const d = { type: form.type, content: form.content, correctAnswer: form.correctAnswer, referenceAnswer: form.referenceAnswer, difficulty: form.difficulty, score: form.score, knowledgePointIds: form.knowledgePointIds }
             if (form.type==='SINGLE_CHOICE'||form.type==='MULTI_CHOICE') d.options = form.options
-            try { await api.addQuestion(d); dialogVisible.value = false; load(); $m('新增成功') } catch(e) { $m(e.response?.data?.msg||'失败','error') }
+            try {
+                // 录入查重：命中相似题则询问是否仍要保存（需求要求）
+                const dup = await api.checkDuplicate({content: form.content, type: form.type})
+                const dups = dup.data.data || []
+                const proceed = dups.length === 0 ? Promise.resolve()
+                    : $c(`检测到 ${dups.length} 道相似题目（ID: ${dups.map(x=>x.id).join(', ')}），是否仍要保存？`, '题目查重提示')
+                proceed.then(async () => { await api.addQuestion(d); dialogVisible.value = false; load(); $m('新增成功') }).catch(()=>{})
+            } catch(e) { $m(e.response?.data?.msg||'失败','error') }
+        }
+        const uploadQuestions = file => {
+            api.importQuestions(file).then(r => {
+                const d = r.data.data
+                load()
+                if (d.duplicates?.length) {
+                    $m(`成功导入 ${d.imported} 道，跳过重复 ${d.duplicates.length} 道${d.failed?`，失败 ${d.failed} 道`:''}`, 'warning')
+                    const lines = d.duplicates.slice(0,5).map(x=>`第${x.row}行「${x.content}」→ 与题目#${x.matchId}重复`).join('\n')
+                    ElementPlus.ElMessageBox.alert(`以下题目与题库重复，已自动跳过：\n${lines}${d.duplicates.length>5?`\n…共 ${d.duplicates.length} 道`:''}`, '导入查重结果')
+                } else if (d.failed) {
+                    $m(`成功导入 ${d.imported} 道，失败 ${d.failed} 道`, 'warning')
+                    ElementPlus.ElMessageBox.alert(d.errors.slice(0,5).join('\n'), '导入失败明细')
+                } else {
+                    $m(`成功导入 ${d.imported} 道题目`)
+                }
+            }).catch(e => $m(e.response?.data?.msg||'导入失败','error'))
+            return false
         }
         onMounted(async () => { load(); try { const r = await api.knowledgePoints(); kpList.value = r.data.data } catch(e) { console.error(e) } })
-        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, load, toggle, del, showAdd, save }
+        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, load, toggle, del, showAdd, save, uploadQuestions }
     }
 })
 
