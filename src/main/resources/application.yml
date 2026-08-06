@@ -12,7 +12,7 @@ spring:
       max-file-size: 20MB
       max-request-size: 25MB
   # === 邮箱（注册验证码，QQ SMTP；授权码从环境变量 MAIL_AUTH_CODE 注入，勿入库）===
-  # 代理：本机 Clash 7890（smtp.qq.com 走 DIRECT 规则）；未开 Clash 时邮件发送会失败
+  # 代理（可选）：默认直连（QQ SMTP 国内直连畅通）；WSL 等特殊网络环境可设 MAIL_PROXY_HOST/MAIL_PROXY_PORT 走 Clash
   mail:
     host: smtp.qq.com
     port: 465
@@ -21,8 +21,8 @@ spring:
     properties:
       mail.smtp.auth: true
       mail.smtp.ssl.enable: true
-      mail.smtp.proxy.host: 127.0.0.1
-      mail.smtp.proxy.port: 7890
+      mail.smtp.proxy.host: ${MAIL_PROXY_HOST:}
+      mail.smtp.proxy.port: ${MAIL_PROXY_PORT:0}
   # === MySQL（主数据库：本地 XAMPP MariaDB / 生产 Docker MySQL）===
   # 本机 XAMPP root 默认空密码；生产环境用环境变量注入: set DB_PASSWORD=xxx
   datasource:

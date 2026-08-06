@@ -33,21 +33,34 @@ public class DeepSeekClient {
     public DeepSeekClient(ObjectMapper objectMapper) {
         HttpClient.Builder builder = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10));
-        // 支持代理（本地开发经 Clash）：读 HTTPS_PROXY 环境变量；服务器部署无此变量时直连
+        // 代理探测式使用（本机 Clash 规则模式）：
+        // - HTTPS_PROXY 环境变量存在 且 代理端口可连 → 走代理（Clash 对国内域名走 DIRECT，无实质影响）
+        // - 代理不可用（Clash 退出）→ 自动直连，不影响国内直连 DeepSeek 的场景
         String proxyEnv = System.getenv("HTTPS_PROXY");
         if (proxyEnv != null && !proxyEnv.isBlank() && !"direct".equalsIgnoreCase(proxyEnv)) {
             try {
                 URI pu = URI.create(proxyEnv.contains("://") ? proxyEnv : "http://" + proxyEnv);
                 int port = pu.getPort() > 0 ? pu.getPort() : 80;
-                if (pu.getHost() != null) {
+                if (pu.getHost() != null && isPortOpen(pu.getHost(), port)) {
                     builder.proxy(java.net.ProxySelector.of(new java.net.InetSocketAddress(pu.getHost(), port)));
                 }
+                // 端口不可达则保持直连
             } catch (Exception ignored) {
                 // 代理配置解析失败则直连
             }
         }
         this.httpClient = builder.build();
         this.objectMapper = objectMapper;
+    }
+
+    /** 探测代理端口是否可达（1.5s 超时），避免 Clash 未启动时连接失败 */
+    private boolean isPortOpen(String host, int port) {
+        try (java.net.Socket socket = new java.net.Socket()) {
+            socket.connect(new java.net.InetSocketAddress(host, port), 1500);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**
