@@ -314,8 +314,33 @@ public class AdminController {
 
     @PostMapping("/teaching-classes")
     public R addTeachingClass(@RequestBody TeachingClass tc) {
+        if (tc.getName() == null || tc.getName().isBlank()) {
+            return R.badRequest("教学班名称不能为空");
+        }
+        if (tc.getTeacherId() == null) {
+            return R.badRequest("请指定负责教师");
+        }
         teachingClassDao.insert(tc);
         return R.ok().data(tc);
+    }
+
+    @GetMapping("/teaching-classes/{id}")
+    public R getTeachingClass(@PathVariable Long id) {
+        TeachingClass tc = teachingClassDao.selectById(id);
+        if (tc == null) return R.badRequest("教学班不存在");
+        List<Clazz> classes = clazzDao.selectList(new LambdaQueryWrapper<Clazz>()
+                .inSql(Clazz::getId, "SELECT clazz_id FROM teaching_class_clazz WHERE teaching_class_id = " + id));
+        return R.ok().data(Map.of("teachingClass", tc, "classes", classes));
+    }
+
+    @PutMapping("/teaching-classes/{id}")
+    public R updateTeachingClass(@PathVariable Long id, @RequestBody TeachingClass tc) {
+        TeachingClass exist = teachingClassDao.selectById(id);
+        if (exist == null) return R.badRequest("教学班不存在");
+        if (tc.getName() != null && !tc.getName().isBlank()) exist.setName(tc.getName());
+        if (tc.getTeacherId() != null) exist.setTeacherId(tc.getTeacherId());
+        teachingClassDao.updateById(exist);
+        return R.ok().data(exist);
     }
 
     @DeleteMapping("/teaching-classes/{id}")
