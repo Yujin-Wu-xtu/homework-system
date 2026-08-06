@@ -214,12 +214,13 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
             qm.put("type", q.getType());
             qm.put("content", q.getContent());
             qm.put("score", hq.getScore());
-            // 客观题随机排列选项
+            // 客观题选项按 label 固定顺序（A、B、C、D）——选项标签存库，随机 shuffle 会使显示顺序
+            // 变成 B/A/D/C（用户视为乱序 bug）；判分按 label 匹配答案，与显示顺序无关
             if (!"ESSAY".equals(q.getType())) {
                 List<QuestionOption> options = questionOptionDao.selectList(
                         new LambdaQueryWrapper<QuestionOption>()
-                                .eq(QuestionOption::getQuestionId, q.getId()));
-                Collections.shuffle(options, new Random(seed + q.getId()));
+                                .eq(QuestionOption::getQuestionId, q.getId())
+                                .orderByAsc(QuestionOption::getLabel));
                 qm.put("options", options);
             }
             questions.add(qm);

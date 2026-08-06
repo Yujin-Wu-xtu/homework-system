@@ -3,6 +3,7 @@ package com.xtu.homework.service;
 import com.xtu.homework.HomeworkApplication;
 import com.xtu.homework.dto.HomeworkAssignDto;
 import com.xtu.homework.entity.Homework;
+import com.xtu.homework.entity.QuestionOption;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -73,6 +74,16 @@ class HomeworkServiceImplTest {
         assertTrue(detail.containsKey("homework"));
         assertTrue(detail.containsKey("questions"));
         assertTrue(detail.containsKey("submission"));
+        // 客观题选项必须按 label 固定顺序（A、B、C、D）——随机 shuffle 曾导致显示乱序（用户报 bug）
+        List<Map<String, Object>> questions = (List<Map<String, Object>>) detail.get("questions");
+        assertFalse(questions.isEmpty());
+        Map<String, Object> first = questions.get(0);
+        if (!"ESSAY".equals(first.get("type"))) {
+            List<QuestionOption> options = (List<QuestionOption>) first.get("options");
+            assertEquals(List.of("A", "B", "C", "D"),
+                    options.stream().map(QuestionOption::getLabel).toList(),
+                    "客观题选项应按 label 升序（A、B、C、D）");
+        }
     }
 
     @Test
