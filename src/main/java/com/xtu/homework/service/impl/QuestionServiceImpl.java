@@ -40,6 +40,9 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionDao, Question>
                 (question.getCorrectAnswer() == null || question.getCorrectAnswer().isBlank())) {
             throw new RuntimeException("客观题必须录入标准答案");
         }
+        if (question.getDifficulty() == null) question.setDifficulty("MEDIUM");
+        if (question.getScore() == null) question.setScore(BigDecimal.valueOf(5));
+        if (question.getCreatorId() == null) question.setCreatorId(1L); // admin
         question.setStatus("ACTIVE");
         questionDao.insert(question);
 
@@ -58,6 +61,56 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionDao, Question>
             }
         }
         return question;
+    }
+
+    @Override
+    @Transactional
+    public Question updateQuestion(Long id, Question q, List<QuestionOption> options,
+                                   List<Long> knowledgePointIds) {
+        Question exist = questionDao.selectById(id);
+        if (exist == null) throw new RuntimeException("题目不存在");
+        // 基础字段：非空才更新（支持部分更新）；题型不可改
+        if (q.getContent() != null && !q.getContent().isBlank()) exist.setContent(q.getContent());
+        if (q.getCorrectAnswer() != null) exist.setCorrectAnswer(q.getCorrectAnswer());
+        if (q.getReferenceAnswer() != null) exist.setReferenceAnswer(q.getReferenceAnswer());
+        if (q.getDifficulty() != null) exist.setDifficulty(q.getDifficulty());
+        if (q.getScore() != null) exist.setScore(q.getScore());
+        // 客观题不允许清空标准答案
+        if (!"ESSAY".equals(exist.getType()) &&
+                (exist.getCorrectAnswer() == null || exist.getCorrectAnswer().isBlank())) {
+            throw new RuntimeException("客观题必须保留标准答案");
+        }
+        questionDao.updateById(exist);
+
+        // 选项：先删后插
+        if (options != null) {
+            questionOptionDao.delete(new LambdaQueryWrapper<QuestionOption>()
+                    .eq(QuestionOption::getQuestionId, id));
+            int sort = 1;
+            for (QuestionOption opt : options) {
+                if (opt.getLabel() == null || opt.getLabel().isBlank()
+                        || opt.getContent() == null || opt.getContent().isBlank()) continue;
+                QuestionOption no = new QuestionOption();
+                no.setQuestionId(id);
+                no.setLabel(opt.getLabel());
+                no.setContent(opt.getContent());
+                no.setSortOrder(sort++);
+                questionOptionDao.insert(no);
+            }
+        }
+        // 知识点关联：先删后插
+        if (knowledgePointIds != null) {
+            questionKnowledgeDao.delete(new LambdaQueryWrapper<QuestionKnowledge>()
+                    .eq(QuestionKnowledge::getQuestionId, id));
+            for (Long kpId : knowledgePointIds) {
+                if (kpId == null) continue;
+                QuestionKnowledge qk = new QuestionKnowledge();
+                qk.setQuestionId(id);
+                qk.setKnowledgePointId(kpId);
+                questionKnowledgeDao.insert(qk);
+            }
+        }
+        return exist;
     }
 
     @Override

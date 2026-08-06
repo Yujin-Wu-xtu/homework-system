@@ -29,6 +29,9 @@ public class AdminController {
     private final HomeworkDao homeworkDao;
     private final KnowledgePointDao knowledgePointDao;
     private final TeachingClassDao teachingClassDao;
+    private final QuestionKnowledgeDao questionKnowledgeDao;
+    private final QuestionOptionDao questionOptionDao;
+    private final HomeworkQuestionDao homeworkQuestionDao;
 
     // ---- 首页统计 ----
     @GetMapping("/dashboard")
@@ -225,26 +228,72 @@ public class AdminController {
         }
 
         @SuppressWarnings("unchecked")
-        List<Long> kpIds = (List<Long>) body.get("knowledgePointIds");
+        List<Number> kpNums = (List<Number>) body.get("knowledgePointIds");
+        List<Long> kpIds = null;
+        if (kpNums != null) {
+            kpIds = kpNums.stream().map(Number::longValue).toList();
+        }
         return R.ok().data(questionService.addQuestion(q, options, kpIds));
     }
 
     @PutMapping("/questions/{id}")
     public R updateQuestion(@PathVariable Long id, @RequestBody Map<String, Object> body) {
-        Question q = questionDao.selectById(id);
-        if (q == null) return R.badRequest("题目不存在");
+        Question q = new Question();
         if (body.containsKey("content")) q.setContent((String) body.get("content"));
         if (body.containsKey("correctAnswer")) q.setCorrectAnswer((String) body.get("correctAnswer"));
         if (body.containsKey("referenceAnswer")) q.setReferenceAnswer((String) body.get("referenceAnswer"));
         if (body.containsKey("difficulty")) q.setDifficulty((String) body.get("difficulty"));
         if (body.containsKey("score"))
             q.setScore(java.math.BigDecimal.valueOf(((Number) body.get("score")).doubleValue()));
-        questionDao.updateById(q);
-        return R.ok().data(q);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> optList = (List<Map<String, Object>>) body.get("options");
+        List<QuestionOption> options = null;
+        if (optList != null) {
+            options = new java.util.ArrayList<>();
+            for (Map<String, Object> o : optList) {
+                QuestionOption opt = new QuestionOption();
+                opt.setLabel((String) o.get("label"));
+                opt.setContent((String) o.get("content"));
+                options.add(opt);
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Number> kpNums = (List<Number>) body.get("knowledgePointIds");
+        List<Long> kpIds = null;
+        if (kpNums != null) {
+            kpIds = kpNums.stream().map(Number::longValue).toList();
+        }
+        try {
+            return R.ok().data(questionService.updateQuestion(id, q, options, kpIds));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
+    }
+
+    @GetMapping("/questions/{id}/knowledge-points")
+    public R getQuestionKnowledgePoints(@PathVariable Long id) {
+        List<Long> kpIds = questionKnowledgeDao.selectList(
+                        new LambdaQueryWrapper<QuestionKnowledge>()
+                                .eq(QuestionKnowledge::getQuestionId, id))
+                .stream().map(QuestionKnowledge::getKnowledgePointId).toList();
+        return R.ok().data(kpIds);
     }
 
     @DeleteMapping("/questions/{id}")
     public R deleteQuestion(@PathVariable Long id) {
+        // 被作业引用时拒绝删除（可改为禁用）
+        Long used = homeworkQuestionDao.selectCount(
+                new LambdaQueryWrapper<HomeworkQuestion>().eq(HomeworkQuestion::getQuestionId, id));
+        if (used > 0) {
+            return R.badRequest("该题目已被作业引用，无法删除（可改为禁用）");
+        }
+        // 先删选项与知识点关联，再删题（外键约束）
+        questionOptionDao.delete(new LambdaQueryWrapper<QuestionOption>()
+                .eq(QuestionOption::getQuestionId, id));
+        questionKnowledgeDao.delete(new LambdaQueryWrapper<QuestionKnowledge>()
+                .eq(QuestionKnowledge::getQuestionId, id));
         questionDao.deleteById(id);
         return R.ok();
     }

@@ -219,4 +219,67 @@ class QuestionServiceImplTest {
         assertEquals(4, opts.size());
         assertEquals("A", opts.get(0).getLabel());
     }
+
+    // ========== 编辑题目（选项/知识点更新）==========
+
+    @Test
+    @Order(16)
+    void testUpdateQuestionOptionsAndKps() {
+        // 用导入的选择题（含4选项）做编辑：改为3个选项 + 分值变化
+        Question sc = questionService.getOne(new LambdaQueryWrapper<Question>()
+                .eq(Question::getContent, "单元测试Excel导入单选：算法的时间复杂度主要取决于什么？"));
+        assertNotNull(sc);
+
+        List<QuestionOption> newOpts = List.of(
+                opt("A", "选项A内容"),
+                opt("B", "选项B内容"),
+                opt("C", "选项C内容"));
+        Question upd = new Question();
+        upd.setContent("单元测试Excel导入单选（已编辑）：算法的时间复杂度主要取决于什么？");
+        upd.setScore(java.math.BigDecimal.valueOf(8));
+
+        Question saved = questionService.updateQuestion(sc.getId(), upd, newOpts, null);
+        assertEquals("单元测试Excel导入单选（已编辑）：算法的时间复杂度主要取决于什么？", saved.getContent());
+        assertEquals(8, saved.getScore().intValue());
+
+        // 选项应变为 3 个（先删后插）
+        List<QuestionOption> opts = questionService.getOptions(sc.getId());
+        assertEquals(3, opts.size(), "编辑后选项应为3个（旧的4个已删除）");
+        assertEquals("A", opts.get(0).getLabel());
+        assertEquals("C", opts.get(2).getLabel());
+    }
+
+    @Test
+    @Order(17)
+    void testUpdateQuestionKeepAnswerForObjective() {
+        Question q = new Question();
+        q.setType("TRUE_FALSE");
+        q.setContent("单元测试更新保护：判断题必须保留答案");
+        q.setCorrectAnswer("对");
+        Question created = questionService.addQuestion(q, null, null);
+
+        // 尝试把答案清空 → 应拒绝
+        Question upd = new Question();
+        upd.setCorrectAnswer("");
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> questionService.updateQuestion(created.getId(), upd, null, null));
+        assertTrue(ex.getMessage().contains("标准答案"), "应提示客观题必须保留标准答案");
+    }
+
+    @Test
+    @Order(18)
+    void testUpdateNonexistentQuestion() {
+        Question upd = new Question();
+        upd.setContent("不存在");
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> questionService.updateQuestion(999999L, upd, null, null));
+        assertTrue(ex.getMessage().contains("不存在"));
+    }
+
+    private static QuestionOption opt(String label, String content) {
+        QuestionOption o = new QuestionOption();
+        o.setLabel(label);
+        o.setContent(content);
+        return o;
+    }
 }

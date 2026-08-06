@@ -84,6 +84,7 @@ const api = {
     updateQuestion: (id, d) => axios.put('/api/admin/questions/' + id, d),
     deleteQuestion: id => axios.delete('/api/admin/questions/' + id),
     questionOptions: id => axios.get('/api/admin/questions/' + id + '/options'),
+    questionKps: id => axios.get('/api/admin/questions/' + id + '/knowledge-points'),
     checkDuplicate: d => axios.post('/api/admin/questions/check-duplicate', d),
     toggleQuestion: id => axios.put('/api/admin/questions/' + id + '/status'),
     importQuestions: file => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/questions/import', fd) },
@@ -363,17 +364,18 @@ const AdminQuestions = defineComponent({
                 <el-table-column prop="status" label="状态" width="80">
                     <template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'info'" size="small">{{row.status==='ACTIVE'?'启用':'禁用'}}</el-tag></template>
                 </el-table-column>
-                <el-table-column label="操作" width="160">
+                <el-table-column label="操作" width="220">
                     <template #default="{row}">
+                        <el-button size="small" @click="edit(row)">编辑</el-button>
                         <el-button size="small" @click="toggle(row.id)">{{row.status==='ACTIVE'?'禁用':'启用'}}</el-button>
                         <el-button size="small" type="danger" @click="del(row.id)">删除</el-button>
                     </template>
                 </el-table-column>
             </el-table>
-            <!-- 新增题目弹窗 -->
-            <el-dialog title="新增题目" v-model="dialogVisible" width="650px">
+            <!-- 新增/编辑题目弹窗 -->
+            <el-dialog :title="isEdit?'编辑题目':'新增题目'" v-model="dialogVisible" width="650px">
                 <el-form :model="form" label-width="80px">
-                    <el-form-item label="题型"><el-select v-model="form.type" style="width:100%"><el-option v-for="(v,k) in TYPE_MAP" :key="k" :label="v" :value="k"/></el-select></el-form-item>
+                    <el-form-item label="题型"><el-select v-model="form.type" style="width:100%" :disabled="isEdit"><el-option v-for="(v,k) in TYPE_MAP" :key="k" :label="v" :value="k"/></el-select></el-form-item>
                     <el-form-item label="题干"><el-input v-model="form.content" type="textarea" :rows="3"/></el-form-item>
                     <el-form-item label="标准答案" v-if="form.type!=='ESSAY'"><el-input v-model="form.correctAnswer" placeholder="单选题填选项字母如C，多选填ACD，判断填对/错"/></el-form-item>
                     <el-form-item label="参考答案" v-if="form.type==='ESSAY'"><el-input v-model="form.referenceAnswer" type="textarea" :rows="3" placeholder="参考答案文本"/></el-form-item>
@@ -393,22 +395,32 @@ const AdminQuestions = defineComponent({
             </el-dialog>
         </div>`,
     setup() {
-        const list = ref([]), keyword = ref(''), filterType = ref(''), filterDifficulty = ref(''), dialogVisible = ref(false), kpList = ref([])
-        const form = reactive({type:'SINGLE_CHOICE',content:'',correctAnswer:'',referenceAnswer:'',difficulty:'MEDIUM',score:5,options:[],knowledgePointIds:[]})
+        const list = ref([]), keyword = ref(''), filterType = ref(''), filterDifficulty = ref(''), dialogVisible = ref(false), kpList = ref([]), isEdit = ref(false)
+        const form = reactive({id:null,type:'SINGLE_CHOICE',content:'',correctAnswer:'',referenceAnswer:'',difficulty:'MEDIUM',score:5,options:[],knowledgePointIds:[]})
         const load = async () => { try { const r = await api.questions({page:1,size:100,keyword:keyword.value,type:filterType.value,difficulty:filterDifficulty.value}); list.value = r.data.data.records } catch(e) { console.error(e) } }
         const toggle = async id => { try { await api.toggleQuestion(id); load() } catch(e) { console.error(e) } }
         const del = id => { $c('确定删除该题目？').then(async ()=>{ await api.deleteQuestion(id); load(); $m('已删除') }).catch(()=>{}) }
-        const showAdd = () => { Object.assign(form, {type:'SINGLE_CHOICE',content:'',correctAnswer:'',referenceAnswer:'',difficulty:'MEDIUM',score:5,options:[],knowledgePointIds:[]}); dialogVisible.value = true }
+        const showAdd = () => { Object.assign(form, {id:null,type:'SINGLE_CHOICE',content:'',correctAnswer:'',referenceAnswer:'',difficulty:'MEDIUM',score:5,options:[],knowledgePointIds:[]}); isEdit.value = false; dialogVisible.value = true }
+        const edit = async row => {
+            Object.assign(form, {id:row.id,type:row.type,content:row.content,correctAnswer:row.correctAnswer||'',referenceAnswer:row.referenceAnswer||'',difficulty:row.difficulty,score:Number(row.score)||5,options:[],knowledgePointIds:[]})
+            isEdit.value = true; dialogVisible.value = true
+            try { const [or, kr] = await Promise.all([api.questionOptions(row.id), api.questionKps(row.id)]); form.options = or.data.data || []; form.knowledgePointIds = kr.data.data || [] } catch(e) { console.error(e) }
+        }
         const save = async () => {
-            const d = { type: form.type, content: form.content, correctAnswer: form.correctAnswer, referenceAnswer: form.referenceAnswer, difficulty: form.difficulty, score: form.score, knowledgePointIds: form.knowledgePointIds }
-            if (form.type==='SINGLE_CHOICE'||form.type==='MULTI_CHOICE') d.options = form.options
+            const d = { content: form.content, correctAnswer: form.correctAnswer, referenceAnswer: form.referenceAnswer, difficulty: form.difficulty, score: form.score, knowledgePointIds: form.knowledgePointIds }
+            if (form.type==='SINGLE_CHOICE'||form.type==='MULTI_CHOICE') d.options = form.options.filter(o => o.label && o.content)
             try {
-                // 录入查重：命中相似题则询问是否仍要保存（需求要求）
-                const dup = await api.checkDuplicate({content: form.content, type: form.type})
-                const dups = dup.data.data || []
-                const proceed = dups.length === 0 ? Promise.resolve()
-                    : $c(`检测到 ${dups.length} 道相似题目（ID: ${dups.map(x=>x.id).join(', ')}），是否仍要保存？`, '题目查重提示')
-                proceed.then(async () => { await api.addQuestion(d); dialogVisible.value = false; load(); $m('新增成功') }).catch(()=>{})
+                if (isEdit.value) {
+                    await api.updateQuestion(form.id, d); dialogVisible.value = false; load(); $m('修改成功')
+                } else {
+                    d.type = form.type
+                    // 录入查重：命中相似题则询问是否仍要保存（需求要求）
+                    const dup = await api.checkDuplicate({content: form.content, type: form.type})
+                    const dups = dup.data.data || []
+                    const proceed = dups.length === 0 ? Promise.resolve()
+                        : $c(`检测到 ${dups.length} 道相似题目（ID: ${dups.map(x=>x.id).join(', ')}），是否仍要保存？`, '题目查重提示')
+                    proceed.then(async () => { await api.addQuestion(d); dialogVisible.value = false; load(); $m('新增成功') }).catch(()=>{})
+                }
             } catch(e) { $m(e.response?.data?.msg||'失败','error') }
         }
         const uploadQuestions = file => {
@@ -429,7 +441,7 @@ const AdminQuestions = defineComponent({
             return false
         }
         onMounted(async () => { load(); try { const r = await api.knowledgePoints(); kpList.value = r.data.data } catch(e) { console.error(e) } })
-        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, load, toggle, del, showAdd, save, uploadQuestions }
+        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, load, toggle, del, showAdd, edit, save, uploadQuestions }
     }
 })
 
