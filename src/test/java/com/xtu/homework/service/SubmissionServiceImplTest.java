@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -97,5 +98,41 @@ class SubmissionServiceImplTest {
 
         Submission sub = submissionService.modifyAnswer(3L, dto);
         assertEquals(0, BigDecimal.valueOf(5).compareTo(sub.getAutoScore()));
+    }
+
+    // ========== 评分列表（分页 + 过滤）==========
+
+    @Test
+    @Order(5)
+    void testGradingPageAll() {
+        Map<String, Object> r = submissionService.getGradingPage(testHomeworkId, 1, 10, "ALL");
+        assertTrue(((Number) r.get("total")).intValue() >= 2, "应包含至少2条提交");
+        List<?> records = (List<?>) r.get("records");
+        assertEquals(((Number) r.get("total")).intValue(), records.size());
+        // 每行应含学生姓名
+        Map<?, ?> first = (Map<?, ?>) records.get(0);
+        assertTrue(first.containsKey("studentName") && first.containsKey("status"));
+    }
+
+    @Test
+    @Order(6)
+    void testGradingPageFilterUngraded() {
+        // 两道提交都是 SUBMITTED（未评分），UNGRADED 过滤应命中全部
+        Map<String, Object> r = submissionService.getGradingPage(testHomeworkId, 1, 10, "UNGRADED");
+        assertTrue(((Number) r.get("total")).intValue() >= 2);
+        List<?> records = (List<?>) r.get("records");
+        for (Object o : records) {
+            assertEquals("SUBMITTED", ((Map<?, ?>) o).get("status"));
+        }
+    }
+
+    @Test
+    @Order(7)
+    void testGradingPageSmallSize() {
+        // size=1 应只返回 1 条（分页生效）
+        Map<String, Object> r = submissionService.getGradingPage(testHomeworkId, 1, 1, "ALL");
+        List<?> records = (List<?>) r.get("records");
+        assertEquals(1, records.size(), "size=1 时每页只返回1条");
+        assertTrue(((Number) r.get("total")).intValue() >= 2);
     }
 }

@@ -213,8 +213,12 @@ public class TeacherController {
 
     @DeleteMapping("/homeworks/{id}")
     public R deleteHomework(@PathVariable Long id) {
-        homeworkService.deleteHomework(id);
-        return R.ok();
+        try {
+            homeworkService.deleteHomework(id);
+            return R.ok();
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
     }
 
     @GetMapping("/homeworks/{id}/detail")
@@ -276,8 +280,12 @@ public class TeacherController {
     }
 
     @GetMapping("/homeworks/{id}/grading")
-    public R getGradingList(@PathVariable Long id) {
-        return R.ok().data(submissionService.getUngradedList(id));
+    public R getGradingList(@PathVariable Long id,
+                            @RequestParam(defaultValue = "1") int page,
+                            @RequestParam(defaultValue = "10") int size,
+                            @RequestParam(required = false) String status) {
+        // status: ALL(默认)/UNGRADED(仅待批改)/GRADED(已批改) —— 需求"从指定位置开始评分/过滤"
+        return R.ok().data(submissionService.getGradingPage(id, page, size, status));
     }
 
     @PutMapping("/homeworks/{hwId}/grading/{answerId}")

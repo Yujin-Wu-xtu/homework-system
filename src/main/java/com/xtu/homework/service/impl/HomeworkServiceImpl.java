@@ -103,6 +103,11 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
         if (count > 0) {
             throw new RuntimeException("已有学生提交，不可删除作业");
         }
+        // 清理关联（外键约束）：作业-题目关联 + 预生成的未提交记录
+        hwQuestionDao.delete(new LambdaQueryWrapper<HomeworkQuestion>()
+                .eq(HomeworkQuestion::getHomeworkId, homeworkId));
+        submissionDao.delete(new LambdaQueryWrapper<Submission>()
+                .eq(Submission::getHomeworkId, homeworkId));
         homeworkDao.deleteById(homeworkId);
     }
 

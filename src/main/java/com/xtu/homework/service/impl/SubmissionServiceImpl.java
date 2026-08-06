@@ -1,6 +1,7 @@
 package com.xtu.homework.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.xtu.homework.dao.*;
 import com.xtu.homework.dto.SubmissionDto;
@@ -13,7 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 提交与评分服务实现类
@@ -29,6 +33,7 @@ public class SubmissionServiceImpl extends ServiceImpl<SubmissionDao, Submission
     private final HomeworkDao homeworkDao;
     private final HomeworkQuestionDao hwQuestionDao;
     private final QuestionDao questionDao;
+    private final UserDao userDao;
 
     @Override
     @Transactional
@@ -138,5 +143,34 @@ public class SubmissionServiceImpl extends ServiceImpl<SubmissionDao, Submission
                 new LambdaQueryWrapper<Submission>()
                         .eq(Submission::getHomeworkId, homeworkId)
                         .in(Submission::getStatus, "SUBMITTED", "GRADED"));
+    }
+
+    @Override
+    public Map<String, Object> getGradingPage(Long homeworkId, int page, int size, String status) {
+        LambdaQueryWrapper<Submission> qw = new LambdaQueryWrapper<Submission>()
+                .eq(Submission::getHomeworkId, homeworkId);
+        if (status != null && !status.isBlank() && !"ALL".equals(status)) {
+            // UNGRADED → 仅待批改（SUBMITTED）；GRADED → 已批改
+            qw.eq(Submission::getStatus, "UNGRADED".equals(status) ? "SUBMITTED" : status);
+        }
+        qw.orderByAsc(Submission::getStudentId);
+        Page<Submission> p = submissionDao.selectPage(new Page<>(page, size), qw);
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Submission s : p.getRecords()) {
+            User stu = userDao.selectById(s.getStudentId());
+            rows.add(Map.of(
+                    "submissionId", s.getId(),
+                    "studentId", s.getStudentId(),
+                    "studentName", stu != null ? stu.getRealName() : "未知",
+                    "status", s.getStatus(),
+                    "totalScore", s.getTotalScore() == null ? "" : s.getTotalScore(),
+                    "submitTime", s.getSubmitTime() == null ? "" : s.getSubmitTime().toString()));
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("records", rows);
+        result.put("total", p.getTotal());
+        result.put("page", page);
+        result.put("size", size);
+        return result;
     }
 }

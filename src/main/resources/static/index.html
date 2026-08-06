@@ -120,6 +120,7 @@ const api = {
     deleteHomework: id => axios.delete('/api/teacher/homeworks/' + id),
     homeworkDetail: id => axios.get('/api/teacher/homeworks/' + id + '/detail'),
     homeworkSubmissions: id => axios.get('/api/teacher/homeworks/' + id + '/submissions'),
+    gradingList: (id, p) => axios.get('/api/teacher/homeworks/' + id + '/grading', {params: p}),
     submissionAnswers: (hwId, subId) => axios.get(`/api/teacher/homeworks/${hwId}/submissions/${subId}/answers`),
     searchQuestions: p => axios.get('/api/teacher/questions/search', {params: p}),
     gradeAnswer: (hwId, ansId, d) => axios.put(`/api/teacher/homeworks/${hwId}/grading/${ansId}`, d),
@@ -780,8 +781,15 @@ const TeacherGrading = defineComponent({
     template: `
         <div class="section-card"><h3>批改作业</h3>
             <el-form :inline="true"><el-form-item label="选择作业">
-                <el-select v-model="selectedHwId" placeholder="请选择作业" @change="loadSubmissions" size="small" style="width:300px">
+                <el-select v-model="selectedHwId" placeholder="请选择作业" @change="hwChanged" size="small" style="width:300px">
                     <el-option v-for="h in hwList" :key="h.id" :label="h.title" :value="h.id"/>
+                </el-select>
+            </el-form-item>
+            <el-form-item label="状态" v-if="selectedHwId">
+                <el-select v-model="filterStatus" @change="filterChanged" size="small" style="width:130px">
+                    <el-option label="全部" value="ALL"/>
+                    <el-option label="待批改" value="UNGRADED"/>
+                    <el-option label="已批改" value="GRADED"/>
                 </el-select>
             </el-form-item></el-form>
             <el-table :data="submissions" border stripe v-if="selectedHwId">
@@ -789,12 +797,14 @@ const TeacherGrading = defineComponent({
                 <el-table-column prop="studentName" label="姓名" width="100"/>
                 <el-table-column prop="status" label="状态" width="100"><template #default="{row}"><el-tag :type="row.status==='GRADED'?'success':row.status==='SUBMITTED'?'warning':'info'" size="small">{{row.status}}</el-tag></template></el-table-column>
                 <el-table-column prop="totalScore" label="总分" width="80"/>
+                <el-table-column prop="submitTime" label="提交时间" width="170"><template #default="{row}">{{formatD(row.submitTime)}}</template></el-table-column>
                 <el-table-column label="操作" width="120">
                     <template #default="{row}">
                         <el-button size="small" type="primary" @click="openGrading(row)" :disabled="row.status==='NOT_SUBMITTED'">批改</el-button>
                     </template>
                 </el-table-column>
             </el-table>
+            <el-pagination v-if="selectedHwId" background layout="total, prev, pager, next, sizes" :total="total" :page-size="pageSize" :current-page="pageNum" @current-change="changePage" @size-change="changeSize" style="margin-top:12px;justify-content:flex-end"/>
             <el-dialog title="批改" v-model="gradeVisible" width="700px">
                 <div v-for="(a,i) in answers" :key="i" style="margin-bottom:16px;padding:12px;background:#f5f7fa;border-radius:4px">
                     <p style="font-weight:bold">题目{{i+1}} <el-tag size="small">{{TYPE_MAP[a.questionType]||'未知'}}</el-tag></p>
@@ -809,8 +819,14 @@ const TeacherGrading = defineComponent({
         </div>`,
     setup() {
         const hwList = ref([]), selectedHwId = ref(null), submissions = ref([]), answers = ref([]), gradeVisible = ref(false)
+        const filterStatus = ref('ALL'), pageNum = ref(1), pageSize = ref(10), total = ref(0)
+        const formatD = s => s ? String(s).replace('T',' ').slice(0,19) : ''
         onMounted(async () => { try { const r = await api.teacherHomeworks({page:1,size:50}); hwList.value = r.data.data.records } catch(e) { console.error(e) } })
-        const loadSubmissions = async () => { try { const r = await api.homeworkSubmissions(selectedHwId.value); submissions.value = r.data.data } catch(e) { console.error(e) } }
+        const loadSubmissions = async () => { try { const r = await api.gradingList(selectedHwId.value, {page: pageNum.value, size: pageSize.value, status: filterStatus.value}); submissions.value = r.data.data.records; total.value = r.data.data.total } catch(e) { console.error(e) } }
+        const hwChanged = () => { pageNum.value = 1; loadSubmissions() }
+        const filterChanged = () => { pageNum.value = 1; loadSubmissions() }
+        const changePage = p => { pageNum.value = p; loadSubmissions() }
+        const changeSize = s => { pageSize.value = s; pageNum.value = 1; loadSubmissions() }
         const openGrading = async row => {
             gradeVisible.value = true
             try {
@@ -819,7 +835,7 @@ const TeacherGrading = defineComponent({
             } catch(e) { console.error(e) }
         }
         const saveGrade = async a => { try { await api.gradeAnswer(selectedHwId.value, a.id, {score: a._score, comment: a._comment}); a.score = a._score; a.comment = a._comment; $m('评分已保存') } catch(e) { $m('失败','error') } }
-        return { hwList, selectedHwId, submissions, answers, gradeVisible, loadSubmissions, openGrading, saveGrade, TYPE_MAP }
+        return { hwList, selectedHwId, submissions, answers, gradeVisible, filterStatus, pageNum, pageSize, total, formatD, loadSubmissions, hwChanged, filterChanged, changePage, changeSize, openGrading, saveGrade, TYPE_MAP }
     }
 })
 
