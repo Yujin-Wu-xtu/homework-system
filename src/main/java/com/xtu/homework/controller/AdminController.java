@@ -161,6 +161,22 @@ public class AdminController {
         return R.ok().data(Map.of("newPassword", userService.resetPassword(id)));
     }
 
+    @GetMapping("/students")
+    public R listAllStudents(@RequestParam(defaultValue = "1") int page,
+                             @RequestParam(defaultValue = "50") int size,
+                             @RequestParam(required = false) String keyword,
+                             @RequestParam(required = false) Long clazzId) {
+        LambdaQueryWrapper<User> qw = new LambdaQueryWrapper<>();
+        qw.eq(User::getRole, "STUDENT");
+        if (clazzId != null) qw.eq(User::getClazzId, clazzId);
+        if (keyword != null && !keyword.isBlank()) {
+            qw.and(w -> w.like(User::getUsername, keyword)
+                          .or().like(User::getRealName, keyword));
+        }
+        qw.orderByAsc(User::getClazzId).orderByAsc(User::getUsername);
+        return R.ok().data(userDao.selectPage(new Page<>(page, size), qw));
+    }
+
     @PostMapping("/students/import")
     public R importStudents(@RequestParam("file") MultipartFile file,
                             @RequestParam Long clazzId) {
