@@ -1,0 +1,62 @@
+# =====================================================
+# 在线作业系统 Docker Compose
+# 服务: app (Spring Boot) + db (MySQL 8.0)
+# 用法: docker compose up -d
+# =====================================================
+
+version: '3.8'
+
+services:
+  # ---- MySQL 数据库 ----
+  db:
+    image: mysql:8.0
+    container_name: homework-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-Homework2026!}
+      MYSQL_DATABASE: homework_system
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./src/main/resources/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - homework-net
+
+  # ---- Spring Boot 应用 ----
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: homework-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/homework_system?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8&allowPublicKeyRetrieval=true
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-Homework2026!}
+      SPRING_DATASOURCE_TYPE: com.alibaba.druid.pool.DruidDataSource
+      SPRING_SQL_INIT_MODE: never
+      SPRING_H2_CONSOLE_ENABLED: "false"
+      JWT_SECRET: ${JWT_SECRET:-ProductionSecretKeyChangeMeInProduction2026!@#$}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - homework-net
+
+volumes:
+  mysql_data:
+
+networks:
+  homework-net:
+    driver: bridge

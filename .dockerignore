@@ -1,0 +1,32 @@
+# Maven
+target/
+.mvn/
+tools/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs
+*.docx
+*.pdf
+*.pptx
+*.xlsx
+*.zip
+
+# Temp
+*.log
+*.tmp
+xxq/
+gen_*.py
+3.txt
+start.bat

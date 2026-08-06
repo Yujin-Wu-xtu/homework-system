@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线作业系统</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{font-family:'Microsoft YaHei',sans-serif;background:#f5f7fa}
+        .login-container{display:flex;justify-content:center;align-items:center;min-height:100vh;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)}
+        .login-card{width:420px;padding:40px;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+        .login-card h1{text-align:center;margin-bottom:30px;color:#303133;font-size:24px}
+        .main-header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+        .main-header h2{font-size:18px;color:#303133}
+        .main-layout{display:flex;min-height:calc(100vh - 56px)}
+        .sidebar{width:220px;background:#304156;color:#fff;padding:12px 0}
+        .sidebar .el-menu{background:transparent;border:none}
+        .sidebar .el-menu-item{color:#bfcbd9}
+        .sidebar .el-menu-item:hover,.sidebar .el-menu-item.is-active{background:#263445;color:#409eff}
+        .content{padding:20px;flex:1;overflow-y:auto}
+        .stat-cards{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+        .stat-card{flex:1;min-width:160px;padding:20px;background:#fff;border-radius:8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.06);cursor:pointer;transition:transform .2s}
+        .stat-card:hover{transform:translateY(-2px)}
+        .stat-card .num{font-size:32px;font-weight:700;color:#409eff}
+        .stat-card .label{font-size:13px;color:#909399;margin-top:4px}
+        .section-card{background:#fff;border-radius:8px;padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+        .section-card h3{margin-bottom:16px;font-size:16px;color:#303133;border-bottom:2px solid #409eff;padding-bottom:8px}
+        [v-cloak]{display:none}
+    </style>
+</head>
+<body>
+<div id="app" v-cloak>
+    <!-- ========== 登录页面 ========== -->
+    <div v-if="!token" class="login-container">
+        <div class="login-card">
+            <h1>📚 在线作业系统</h1>
+            <el-form :model="loginForm" :rules="loginRules" ref="loginFormRef">
+                <el-form-item prop="username">
+                    <el-input v-model="loginForm.username" placeholder="用户名" size="large" clearable/>
+                </el-form-item>
+                <el-form-item prop="password">
+                    <el-input v-model="loginForm.password" placeholder="密码" type="password" size="large" show-password @keyup.enter="doLogin"/>
+                </el-form-item>
+                <el-form-item>
+                    <el-button type="primary" size="large" style="width:100%" @click="doLogin" :loading="loading">登 录</el-button>
+                </el-form-item>
+            </el-form>
+            <div style="text-align:center;color:#909399;font-size:13px;margin-top:12px">
+                测试账号：admin / T2024001 / 20240001<br>密码统一：Admin123456
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 主界面 ========== -->
+    <div v-else>
+        <div class="main-header">
+            <h2>📚 在线作业系统</h2>
+            <div>
+                <span style="color:#606266;margin-right:16px">{{ userInfo.realName || userInfo.username }}
+                    <el-tag size="small" :type="roleTag">{{ roleLabel }}</el-tag>
+                </span>
+                <el-button size="small" @click="logout">退出登录</el-button>
+            </div>
+        </div>
+        <div class="main-layout">
+            <div class="sidebar">
+                <el-menu :default-active="activeMenu" @select="handleMenuSelect" text-color="#bfcbd9" active-text-color="#409eff">
+                    <template v-if="role==='ADMIN'">
+                        <el-menu-item index="dashboard"><span>📊</span> 首页统计</el-menu-item>
+                        <el-menu-item index="teachers"><span>👤</span> 教师管理</el-menu-item>
+                        <el-menu-item index="classes"><span>🏫</span> 班级管理</el-menu-item>
+                        <el-menu-item index="students"><span>👨‍🎓</span> 学生管理</el-menu-item>
+                        <el-menu-item index="questions"><span>✏️</span> 题库管理</el-menu-item>
+                        <el-menu-item index="knowledge"><span>📂</span> 知识点管理</el-menu-item>
+                    </template>
+                    <template v-if="role==='TEACHER'">
+                        <el-menu-item index="myHomeworks"><span>📄</span> 作业管理</el-menu-item>
+                        <el-menu-item index="assignHw"><span>📝</span> 布置作业</el-menu-item>
+                        <el-menu-item index="grading"><span>✅</span> 批改作业</el-menu-item>
+                    </template>
+                    <template v-if="role==='STUDENT'">
+                        <el-menu-item index="myHw"><span>📓</span> 我的作业</el-menu-item>
+                    </template>
+                </el-menu>
+            </div>
+            <div class="content">
+                <component :is="currentView" :key="activeMenu"></component>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const { createApp, ref, reactive, computed, watch, defineComponent, onMounted, nextTick, toRefs } = Vue
+
+// ======== Axios 配置 ========
+axios.defaults.baseURL = ''
+axios.interceptors.request.use(c => {
+    const t = localStorage.getItem('token')
+    if (t) c.headers.Authorization = 'Bearer ' + t
+    return c
+})
+axios.interceptors.response.use(r => r, err => {
+    if (err.response?.status === 401) { localStorage.clear(); location.reload() }
+    return Promise.reject(err)
+})
+
+const $m = (msg, type='success') => ElementPlus.ElMessage[type](msg)
+const $c = (msg, title='提示') => ElementPlus.ElMessageBox.confirm(msg, title, {type:'warning'})
+const TYPE_MAP = {SINGLE_CHOICE:'单选题',MULTI_CHOICE:'多选题',TRUE_FALSE:'判断题',ESSAY:'问答题'}
+const DIFF_MAP = {EASY:{label:'简单',type:'success'},MEDIUM:{label:'中等',type:'warning'},HARD:{label:'困难',type:'danger'}}
+
+const api = {
+    login: d => axios.post('/api/auth/login', d),
+    dashboard: () => axios.get('/api/admin/dashboard'),
+    // Admin - Teachers
+    teachers: p => axios.get('/api/admin/teachers', {params: p}),
+    addTeacher: d => axios.post('/api/admin/teachers', d),
+    updateTeacher: (id, d) => axios.put('/api/admin/teachers/' + id, d),
+    deleteTeacher: id => axios.delete('/api/admin/teachers/' + id),
+    resetTeacherPwd: id => axios.put('/api/admin/teachers/' + id + '/reset-pwd'),
+    // Admin - Classes
+    classes: p => axios.get('/api/admin/classes', {params: p}),
+    addClass: d => axios.post('/api/admin/classes', d),
+    updateClass: (id, d) => axios.put('/api/admin/classes/' + id, d),
+    deleteClass: id => axios.delete('/api/admin/classes/' + id),
+    classStudents: (id, p) => axios.get('/api/admin/classes/' + id + '/students', {params: p}),
+    transferStudent: (cid, sid, d) => axios.put(`/api/admin/classes/${cid}/students/${sid}/transfer`, d),
+    importStudents: (file, clazzId) => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/students/import?clazzId=' + clazzId, fd) },
+    // Admin - Questions
+    questions: p => axios.get('/api/admin/questions', {params: p}),
+    addQuestion: d => axios.post('/api/admin/questions', d),
+    updateQuestion: (id, d) => axios.put('/api/admin/questions/' + id, d),
+    deleteQuestion: id => axios.delete('/api/admin/questions/' + id),
+    questionOptions: id => axios.get('/api/admin/questions/' + id + '/options'),
+    checkDuplicate: d => axios.post('/api/admin/questions/check-duplicate', d),
+    toggleQuestion: id => axios.put('/api/admin/questions/' + id + '/status'),
+    // Admin - Knowledge Points
+    knowledgePoints: k => axios.get('/api/admin/knowledge-points', {params: {keyword: k || ''}}),
+    addKnowledgePoint: d => axios.post('/api/admin/knowledge-points', d),
+    updateKnowledgePoint: (id, d) => axios.put('/api/admin/knowledge-points/' + id, d),
+    deleteKnowledgePoint: id => axios.delete('/api/admin/knowledge-points/' + id),
+    // Admin - Teaching Classes
+    teachingClasses: p => axios.get('/api/admin/teaching-classes', {params: p}),
+    addTeachingClass: d => axios.post('/api/admin/teaching-classes', d),
+    // Admin - Students
+    resetStudentPwd: id => axios.put('/api/admin/students/' + id + '/reset-pwd'),
+    // Teacher
+    teacherHomeworks: p => axios.get('/api/teacher/homeworks', {params: p}),
+    assignHomework: d => axios.post('/api/teacher/homeworks', d),
+    deleteHomework: id => axios.delete('/api/teacher/homeworks/' + id),
+    homeworkDetail: id => axios.get('/api/teacher/homeworks/' + id + '/detail'),
+    homeworkSubmissions: id => axios.get('/api/teacher/homeworks/' + id + '/submissions'),
+    submissionAnswers: (hwId, subId) => axios.get(`/api/teacher/homeworks/${hwId}/submissions/${subId}/answers`),
+    searchQuestions: p => axios.get('/api/teacher/questions/search', {params: p}),
+    gradeAnswer: (hwId, ansId, d) => axios.put(`/api/teacher/homeworks/${hwId}/grading/${ansId}`, d),
+    exportGrades: id => axios.get('/api/teacher/homeworks/' + id + '/export', {responseType: 'blob'}),
+    // Student
+    studentHomeworks: p => axios.get('/api/student/homeworks', {params: p}),
+    studentHomeworkDetail: id => axios.get('/api/student/homeworks/' + id),
+    submitHomework: (id, d) => axios.post('/api/student/homeworks/' + id + '/submit', d),
+    homeworkResult: id => axios.get('/api/student/homeworks/' + id + '/result'),
+}
+
+// ======== Admin Dashboard ========
+const AdminDashboard = defineComponent({
+    template: `
+        <div>
+            <div class="stat-cards">
+                <div class="stat-card" v-for="s in stats" :key="s.label">
+                    <div class="num">{{ s.value }}</div><div class="label">{{ s.label }}</div>
+                </div>
+            </div>
+            <div class="section-card"><h3>系统总览</h3>
+                <p style="color:#909399">当前系统运行正常。请使用左侧菜单进行管理操作。</p>
+            </div>
+        </div>`,
+    setup() {
+        const stats = ref([{label:'班级数',value:0},{label:'学生数',value:0},{label:'教师数',value:0},{label:'题库数',value:0},{label:'作业数',value:0},{label:'知识点数',value:0}])
+        const keys = ['classCount','studentCount','teacherCount','questionCount','homeworkCount','knowledgePointCount']
+        onMounted(async () => {
+            try { const r = await api.dashboard(); const d = r.data.data; stats.value.forEach((s,i) => s.value = d[keys[i]] || 0) } catch(e) { console.error('Dashboard load failed', e) }
+        })
+        return { stats }
+    }
+})
+
+// ======== Admin Teachers ========
+const AdminTeachers = defineComponent({
+    template: `
+        <div class="section-card"><h3>教师管理 <el-button type="primary" size="small" @click="showAdd">新增教师</el-button></h3>
+            <el-input v-model="keyword" placeholder="搜索姓名/工号" size="small" style="width:240px;margin-right:8px" clearable @clear="load"/>
+            <el-button size="small" @click="load">搜索</el-button>
+            <el-table :data="list" style="margin-top:12px" border stripe>
+                <el-table-column prop="id" label="ID" width="60"/>
+                <el-table-column prop="username" label="工号" width="120"/>
+                <el-table-column prop="realName" label="姓名" width="100"/>
+                <el-table-column prop="phone" label="手机号" width="140"/>
+                <el-table-column prop="email" label="邮箱"/>
+                <el-table-column prop="status" label="状态" width="80">
+                    <template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'danger'" size="small">{{row.status}}</el-tag></template>
+                </el-table-column>
+                <el-table-column label="操作" width="240">
+                    <template #default="{row}">
+                        <el-button size="small" @click="edit(row)">编辑</el-button>
+                        <el-button size="small" type="warning" @click="resetPwd(row.id)">重置密码</el-button>
+                        <el-button size="small" type="danger" @click="del(row.id)">删除</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+            <el-dialog :title="dialogTitle" v-model="dialogVisible" width="460px">
+                <el-form :model="form" label-width="80px">
+                    <el-form-item label="工号"><el-input v-model="form.username"/></el-form-item>
+                    <el-form-item label="姓名"><el-input v-model="form.realName"/></el-form-item>
+                    <el-form-item label="手机号"><el-input v-model="form.phone"/></el-form-item>
+                    <el-form-item label="邮箱"><el-input v-model="form.email"/></el-form-item>
+                </el-form>
+                <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+            </el-dialog>
+        </div>`,
+    setup() {
+        const list = ref([]), keyword = ref(''), dialogVisible = ref(false), isEdit = ref(false), form = reactive({username:'',realName:'',phone:'',email:''})
+        const dialogTitle = computed(() => isEdit.value?'编辑教师':'新增教师')
+        const load = async () => { try { const r = await api.teachers({page:1,size:100,keyword:keyword.value}); list.value = r.data.data.records } catch(e) { console.error(e) } }
+        const showAdd = () => { Object.assign(form, {username:'',realName:'',phone:'',email:''}); isEdit.value = false; dialogVisible.value = true }
+        const edit = row => { Object.assign(form, row); isEdit.value = true; dialogVisible.value = true }
+        const save = async () => { try { isEdit.value ? await api.updateTeacher(form.id, form) : await api.addTeacher(form); dialogVisible.value = false; load(); $m(isEdit.value?'修改成功':'新增成功') } catch(e) { $m(e.response?.data?.msg||'操作失败','error') } }
+        const del = id => { $c('确定删除该教师？').then(async ()=>{ await api.deleteTeacher(id); load(); $m('已删除') }).catch(()=>{}) }
+        const resetPwd = async id => { try { const r = await api.resetTeacherPwd(id); $m('新密码：'+r.data.data?.newPassword) } catch(e) { console.error(e) } }
+        onMounted(load)
+        return { list, keyword, dialogVisible, dialogTitle, form, showAdd, edit, save, del, resetPwd, load }
+    }
+})
+
+// ======== Admin Classes ========
+const AdminClasses = defineComponent({
+    template: `
+        <div class="section-card"><h3>班级管理 <el-button type="primary" size="small" @click="showAdd">新增班级</el-button></h3>
+            <el-table :data="list" border stripe>
+                <el-table-column prop="id" label="ID" width="60"/>
+                <el-table-column prop="name" label="班级名称"/>
+                <el-table-column prop="grade" label="年级" width="100"/>
+                <el-table-column prop="major" label="专业" width="150"/>
+                <el-table-column label="操作" width="280">
+                    <template #default="{row}">
+                        <el-button size="small" @click="viewStudents(row)">查看学生</el-button>
+                        <el-button size="small" @click="edit(row)">编辑</el-button>
+                        <el-button size="small" type="danger" @click="del(row.id)">删除</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+            <el-dialog title="新增班级" v-model="dialogVisible" width="460px">
+                <el-form :model="form" label-width="80px">
+                    <el-form-item label="班级名称"><el-input v-model="form.name" placeholder="如: 2024级软件工程1班"/></el-form-item>
+                    <el-form-item label="年级"><el-input v-model="form.grade" placeholder="如: 2024级"/></el-form-item>
+                    <el-form-item label="专业"><el-input v-model="form.major" placeholder="如: 软件工程"/></el-form-item>
+                </el-form>
+                <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+            </el-dialog>
+            <el-dialog title="编辑班级" v-model="editVisible" width="460px">
+                <el-form :model="editForm" label-width="80px">
+                    <el-form-item label="班级名称"><el-input v-model="editForm.name"/></el-form-item>
+                    <el-form-item label="年级"><el-input v-model="editForm.grade"/></el-form-item>
+                    <el-form-item label="专业"><el-input v-model="editForm.major"/></el-form-item>
+                </el-form>
+                <template #footer><el-button @click="editVisible=false">取消</el-button><el-button type="primary" @click="saveEdit">保存</el-button></template>
+            </el-dialog>
+            <el-dialog title="班级学生" v-model="studentVisible" width="700px">
+                <div style="margin-bottom:8px"><el-upload :show-file-list="false" :before-upload="f=>uploadStudents(f)" accept=".xlsx"><el-button size="small" type="success">导入学生Excel</el-button></el-upload></div>
+                <el-table :data="students" border stripe max-height="400">
+                    <el-table-column prop="username" label="学号" width="120"/>
+                    <el-table-column prop="realName" label="姓名" width="100"/>
+                    <el-table-column prop="phone" label="手机号" width="140"/>
+                    <el-table-column prop="email" label="邮箱"/>
+                </el-table>
+            </el-dialog>
+        </div>`,
+    setup() {
+        const list = ref([]), dialogVisible = ref(false), editVisible = ref(false), studentVisible = ref(false)
+        const form = reactive({name:'',grade:'',major:''}), editForm = reactive({id:null,name:'',grade:'',major:''})
+        const students = ref([]), currentClazzId = ref(null)
+        const load = async () => { try { const r = await api.classes({page:1,size:100}); list.value = r.data.data.records } catch(e) { console.error(e) } }
+        const showAdd = () => { Object.assign(form, {name:'',grade:'',major:''}); dialogVisible.value = true }
+        const save = async () => { try { await api.addClass(form); dialogVisible.value = false; load(); $m('新增成功') } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
+        const edit = row => { Object.assign(editForm, row); editVisible.value = true }
+        const saveEdit = async () => { try { await api.updateClass(editForm.id, editForm); editVisible.value = false; load(); $m('修改成功') } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
+        const del = id => { $c('确定删除该班级？').then(async ()=>{ await api.deleteClass(id); load(); $m('已删除') }).catch(()=>{}) }
+        const viewStudents = async row => { currentClazzId.value = row.id; studentVisible.value = true; try { const r = await api.classStudents(row.id, {page:1,size:200}); students.value = r.data.data.records } catch(e) { console.error(e) } }
+        const uploadStudents = file => { api.importStudents(file, currentClazzId.value).then(r => { $m('成功导入 '+r.data.data.imported+' 名学生'); viewStudents({id: currentClazzId.value}) }).catch(e => $m(e.response?.data?.msg||'导入失败','error')); return false }
+        onMounted(load)
+        return { list, dialogVisible, editVisible, studentVisible, form, editForm, students, showAdd, save, edit, saveEdit, del, viewStudents, uploadStudents }
+    }
+})
+
+// ======== Admin Students ========
+const AdminStudents = defineComponent({
+    template: `
+        <div class="section-card"><h3>学生管理</h3>
+            <el-form :inline="true"><el-form-item label="选择班级">
+                <el-select v-model="selectedClazzId" placeholder="请选择班级" @change="loadStudents" clearable size="small" style="width:220px">
+                    <el-option v-for="c in classList" :key="c.id" :label="c.name" :value="c.id"/>
+                </el-select>
+            </el-form-item></el-form>
+            <el-table :data="students" border stripe v-if="selectedClazzId">
+                <el-table-column prop="username" label="学号" width="140"/>
+                <el-table-column prop="realName" label="姓名" width="120"/>
+                <el-table-column prop="phone" label="手机号" width="140"/>
+                <el-table-column prop="email" label="邮箱"/>
+                <el-table-column prop="status" label="状态" width="80">
+                    <template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'danger'" size="small">{{row.status}}</el-tag></template>
+                </el-table-column>
+                <el-table-column label="操作" width="120">
+                    <template #default="{row}"><el-button size="small" type="warning" @click="resetPwd(row.id)">重置密码</el-button></template>
+                </el-table-column>
+            </el-table>
+            <p v-else style="color:#909399">请先选择一个班级查看学生</p>
+        </div>`,
+    setup() {
+        const classList = ref([]), selectedClazzId = ref(null), students = ref([])
+        onMounted(async () => { try { const r = await api.classes({page:1,size:100}); classList.value = r.data.data.records } catch(e) { console.error(e) } })
+        const loadStudents = async () => { if (!selectedClazzId.value) return; try { const r = await api.classStudents(selectedClazzId.value, {page:1,size:200}); students.value = r.data.data.records } catch(e) { console.error(e) } }
+        const resetPwd = async id => { try { const r = await api.resetStudentPwd(id); $m('新密码：'+r.data.data?.newPassword) } catch(e) { console.error(e) } }
+        return { classList, selectedClazzId, students, loadStudents, resetPwd }
+    }
+})
+
+// ======== Admin Questions ========
+const AdminQuestions = defineComponent({
+    template: `
+        <div class="section-card"><h3>题库管理 <el-button type="primary" size="small" @click="showAdd">新增题目</el-button></h3>
+            <el-input v-model="keyword" placeholder="搜索题目" size="small" style="width:240px;margin-right:8px" clearable/>
+            <el-select v-model="filterType" placeholder="题型" size="small" style="width:140px;margin-right:8px" clearable>
+                <el-option v-for="(v,k) in TYPE_MAP" :key="k" :label="v" :value="k"/>
+            </el-select>
+            <el-select v-model="filterDifficulty" placeholder="难度" size="small" style="width:120px;margin-right:8px" clearable>
+                <el-option v-for="(v,k) in DIFF_MAP" :key="k" :label="v.label" :value="k"/>
+            </el-select>
+            <el-button size="small" @click="load">查询</el-button>
+            <el-table :data="list" style="margin-top:12px" border stripe>
+                <el-table-column prop="id" label="ID" width="60"/>
+                <el-table-column prop="type" label="题型" width="100"><template #default="{row}">{{TYPE_MAP[row.type]||row.type}}</template></el-table-column>
+                <el-table-column prop="content" label="题干" show-overflow-tooltip/>
+                <el-table-column prop="difficulty" label="难度" width="80">
+                    <template #default="{row}"><el-tag :type="DIFF_MAP[row.difficulty]?.type||'info'" size="small">{{DIFF_MAP[row.difficulty]?.label||row.difficulty}}</el-tag></template>
+                </el-table-column>
+                <el-table-column prop="status" label="状态" width="80">
+                    <template #default="{row}"><el-tag :type="row.status==='ACTIVE'?'success':'info'" size="small">{{row.status==='ACTIVE'?'启用':'禁用'}}</el-tag></template>
+                </el-table-column>
+                <el-table-column label="操作" width="160">
+                    <template #default="{row}">
+                        <el-button size="small" @click="toggle(row.id)">{{row.status==='ACTIVE'?'禁用':'启用'}}</el-button>
+                        <el-button size="small" type="danger" @click="del(row.id)">删除</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+            <!-- 新增题目弹窗 -->
+            <el-dialog title="新增题目" v-model="dialogVisible" width="650px">
+                <el-form :model="form" label-width="80px">
+                    <el-form-item label="题型"><el-select v-model="form.type" style="width:100%"><el-option v-for="(v,k) in TYPE_MAP" :key="k" :label="v" :value="k"/></el-select></el-form-item>
+                    <el-form-item label="题干"><el-input v-model="form.content" type="textarea" :rows="3"/></el-form-item>
+                    <el-form-item label="标准答案" v-if="form.type!=='ESSAY'"><el-input v-model="form.correctAnswer" placeholder="单选题填选项字母如C，多选填ACD，判断填对/错"/></el-form-item>
+                    <el-form-item label="参考答案" v-if="form.type==='ESSAY'"><el-input v-model="form.referenceAnswer" type="textarea" :rows="3" placeholder="参考答案文本"/></el-form-item>
+                    <el-form-item label="难度"><el-select v-model="form.difficulty" style="width:100%"><el-option v-for="(v,k) in DIFF_MAP" :key="k" :label="v.label" :value="k"/></el-select></el-form-item>
+                    <el-form-item label="分值"><el-input-number v-model="form.score" :min="1" :max="100"/></el-form-item>
+                    <el-form-item label="选项" v-if="form.type==='SINGLE_CHOICE'||form.type==='MULTI_CHOICE'">
+                        <div v-for="(o,i) in form.options" :key="i" style="margin-bottom:4px;display:flex;align-items:center;gap:8px">
+                            <el-input v-model="o.label" placeholder="标签" style="width:80px"/>
+                            <el-input v-model="o.content" placeholder="选项内容" style="flex:1"/>
+                            <el-button size="small" type="danger" @click="form.options.splice(i,1)" circle>✕</el-button>
+                        </div>
+                        <el-button size="small" @click="form.options.push({label: String.fromCharCode(65+form.options.length), content:'', sortOrder: form.options.length})">添加选项</el-button>
+                    </el-form-item>
+                    <el-form-item label="知识点"><el-select v-model="form.knowledgePointIds" multiple placeholder="选择关联知识点" style="width:100%"><el-option v-for="kp in kpList" :key="kp.id" :label="kp.name" :value="kp.id"/></el-select></el-form-item>
+                </el-form>
+                <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+            </el-dialog>
+        </div>`,
+    setup() {
+        const list = ref([]), keyword = ref(''), filterType = ref(''), filterDifficulty = ref(''), dialogVisible = ref(false), kpList = ref([])
+        const form = reactive({type:'SINGLE_CHOICE',content:'',correctAnswer:'',referenceAnswer:'',difficulty:'MEDIUM',score:5,options:[],knowledgePointIds:[]})
+        const load = async () => { try { const r = await api.questions({page:1,size:100,keyword:keyword.value,type:filterType.value,difficulty:filterDifficulty.value}); list.value = r.data.data.records } catch(e) { console.error(e) } }
+        const toggle = async id => { try { await api.toggleQuestion(id); load() } catch(e) { console.error(e) } }
+        const del = id => { $c('确定删除该题目？').then(async ()=>{ await api.deleteQuestion(id); load(); $m('已删除') }).catch(()=>{}) }
+        const showAdd = () => { Object.assign(form, {type:'SINGLE_CHOICE',content:'',correctAnswer:'',referenceAnswer:'',difficulty:'MEDIUM',score:5,options:[],knowledgePointIds:[]}); dialogVisible.value = true }
+        const save = async () => {
+            const d = { type: form.type, content: form.content, correctAnswer: form.correctAnswer, referenceAnswer: form.referenceAnswer, difficulty: form.difficulty, score: form.score, knowledgePointIds: form.knowledgePointIds }
+            if (form.type==='SINGLE_CHOICE'||form.type==='MULTI_CHOICE') d.options = form.options
+            try { await api.addQuestion(d); dialogVisible.value = false; load(); $m('新增成功') } catch(e) { $m(e.response?.data?.msg||'失败','error') }
+        }
+        onMounted(async () => { load(); try { const r = await api.knowledgePoints(); kpList.value = r.data.data } catch(e) { console.error(e) } })
+        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, load, toggle, del, showAdd, save }
+    }
+})
+
+// ======== Admin Knowledge Points ========
+const AdminKnowledge = defineComponent({
+    template: `
+        <div class="section-card"><h3>知识点管理 <el-button type="primary" size="small" @click="showAdd">新增知识点</el-button></h3>
+            <el-table :data="list" border stripe>
+                <el-table-column prop="id" label="ID" width="60"/>
+                <el-table-column prop="name" label="名称"/>
+                <el-table-column prop="subject" label="所属学科" width="120"/>
+                <el-table-column prop="description" label="描述" show-overflow-tooltip/>
+                <el-table-column label="操作" width="200">
+                    <template #default="{row}">
+                        <el-button size="small" @click="edit(row)">编辑</el-button>
+                        <el-button size="small" type="danger" @click="del(row.id)">删除</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+            <el-dialog :title="isEdit?'编辑知识点':'新增知识点'" v-model="dialogVisible" width="500px">
+                <el-form :model="form" label-width="80px">
+                    <el-form-item label="名称"><el-input v-model="form.name"/></el-form-item>
+                    <el-form-item label="学科"><el-input v-model="form.subject"/></el-form-item>
+                    <el-form-item label="描述"><el-input v-model="form.description" type="textarea"/></el-form-item>
+                </el-form>
+                <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+            </el-dialog>
+        </div>`,
+    setup() {
+        const list = ref([]), dialogVisible = ref(false), isEdit = ref(false), form = reactive({id:null,name:'',subject:'',description:''})
+        const load = async () => { try { const r = await api.knowledgePoints(); list.value = r.data.data } catch(e) { console.error(e) } }
+        const showAdd = () => { Object.assign(form, {id:null,name:'',subject:'',description:''}); isEdit.value = false; dialogVisible.value = true }
+        const edit = row => { Object.assign(form, row); isEdit.value = true; dialogVisible.value = true }
+        const save = async () => {
+            try {
+                if (isEdit.value) await api.updateKnowledgePoint(form.id, form); else await api.addKnowledgePoint(form)
+                dialogVisible.value = false; load(); $m(isEdit.value?'修改成功':'新增成功')
+            } catch(e) { $m(e.response?.data?.msg||'失败','error') }
+        }
+        const del = id => { $c('确定删除该知识点？').then(async ()=>{ await api.deleteKnowledgePoint(id); load(); $m('已删除') }).catch(()=>{}) }
+        onMounted(load)
+        return { list, dialogVisible, isEdit, form, showAdd, edit, save, del }
+    }
+})
+
+// ======== Teacher Homework List ========
+const TeacherHomeworks = defineComponent({
+    emits: ['viewGrading'],
+    template: `
+        <div class="section-card"><h3>作业管理</h3>
+            <el-table :data="list" border stripe v-loading="loading">
+                <el-table-column prop="title" label="作业名称"/>
+                <el-table-column prop="teachingClassId" label="教学班ID" width="100"/>
+                <el-table-column prop="deadline" label="截止时间" width="180"><template #default="{row}">{{row.deadline?.substring(0,16)}}</template></el-table-column>
+                <el-table-column prop="totalScore" label="总分" width="80"/>
+                <el-table-column prop="status" label="状态" width="100">
+                    <template #default="{row}"><el-tag :type="statusTag(row.status)" size="small">{{statusLabel(row.status)}}</el-tag></template>
+                </el-table-column>
+                <el-table-column label="操作" width="300">
+                    <template #default="{row}">
+                        <el-button size="small" @click="viewSubmissions(row)">提交情况</el-button>
+                        <el-button size="small" type="success" @click="downloadGrades(row.id)">下载成绩</el-button>
+                        <el-button size="small" type="danger" @click="del(row.id)">删除</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+            <el-dialog title="提交情况" v-model="subVisible" width="800px">
+                <el-table :data="submissions" border stripe>
+                    <el-table-column prop="studentName" label="姓名" width="100"/>
+                    <el-table-column prop="username" label="学号" width="120"/>
+                    <el-table-column prop="status" label="状态" width="120"><template #default="{row}"><el-tag :type="statusTag(row.status)" size="small">{{statusLabel(row.status)}}</el-tag></template></el-table-column>
+                    <el-table-column prop="autoScore" label="客观题得分" width="100"/>
+                    <el-table-column prop="manualScore" label="主观题得分" width="100"/>
+                    <el-table-column prop="totalScore" label="总分" width="80"/>
+                    <el-table-column prop="durationSeconds" label="用时" width="100"><template #default="{row}">{{row.durationSeconds ? Math.floor(row.durationSeconds/60)+'分'+row.durationSeconds%60+'秒' : '-'}}</template></el-table-column>
+                    <el-table-column label="操作" width="120">
+                        <template #default="{row}">
+                            <el-button v-if="row.submissionId" size="small" type="primary" @click="viewAnswers(row)">查看答案</el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </el-dialog>
+            <!-- 学生答案详情 -->
+            <el-dialog title="学生答案" v-model="answerVisible" width="700px">
+                <div v-for="(a,i) in answers" :key="i" style="margin-bottom:12px;padding:8px;background:#f5f7fa;border-radius:4px">
+                    <p><b>题目{{i+1}}:</b> <el-tag size="small">{{TYPE_MAP[a.questionType]||'未知'}}</el-tag></p>
+                    <p><b>学生答案:</b> {{a.studentAnswer||'(未作答)'}}</p>
+                    <p v-if="a.score!==null"><b>得分:</b> {{a.score}} <span v-if="a.comment" style="color:#909399">| 评语: {{a.comment}}</span></p>
+                    <div v-if="a.questionType==='ESSAY'&&a.score===null" style="margin-top:4px">
+                        <el-input-number v-model="a._score" :min="0" :max="100" size="small" placeholder="分数"/>
+                        <el-input v-model="a._comment" placeholder="评语" size="small" style="width:200px;margin-left:8px"/>
+                        <el-button size="small" type="primary" @click="doGrade(a)" style="margin-left:8px">评分</el-button>
+                    </div>
+                </div>
+            </el-dialog>
+        </div>`,
+    setup(props, {emit}) {
+        const list = ref([]), loading = ref(false), subVisible = ref(false), answerVisible = ref(false)
+        const submissions = ref([]), answers = ref([]), currentHwId = ref(null)
+        const load = async () => { loading.value = true; try { const r = await api.teacherHomeworks({page:1,size:50}); list.value = r.data.data.records } catch(e) { console.error(e) } finally { loading.value = false } }
+        const del = id => { $c('确定删除该作业？').then(async ()=>{ await api.deleteHomework(id); load(); $m('已删除') }).catch(()=>{}) }
+        const viewSubmissions = async row => { currentHwId.value = row.id; subVisible.value = true; try { const r = await api.homeworkSubmissions(row.id); submissions.value = r.data.data } catch(e) { console.error(e) } }
+        const viewAnswers = async row => {
+            if (!row.submissionId) return
+            answerVisible.value = true
+            try {
+                const r = await axios.get('/api/teacher/homeworks/' + currentHwId.value + '/submissions/' + row.submissionId + '/answers')
+                answers.value = (r.data.data||[]).map(a => ({...a, _score: a.score, _comment: a.comment||''}))
+            } catch(e) { console.error(e) }
+        }
+        const doGrade = async a => { try { await api.gradeAnswer(currentHwId.value, a.id, {score: a._score, comment: a._comment}); a.score = a._score; a.comment = a._comment; $m('评分成功') } catch(e) { $m('评分失败','error') } }
+        const downloadGrades = async id => { try { const r = await api.exportGrades(id); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.data])); a.download = 'grades.xlsx'; a.click() } catch(e) { console.error(e) } }
+        const statusTag = s => ({PUBLISHED:'success',DRAFT:'info',CLOSED:'warning'}[s]||'')
+        const statusLabel = s => ({PUBLISHED:'进行中',DRAFT:'草稿',CLOSED:'已关闭'}[s]||s)
+        onMounted(load)
+        return { list, loading, del, viewSubmissions, viewAnswers, submissions, answers, subVisible, answerVisible, currentHwId, doGrade, downloadGrades, statusTag, statusLabel, TYPE_MAP }
+    }
+})
+
+// ======== Teacher Assign Homework ========
+const TeacherAssign = defineComponent({
+    emits: ['assigned'],
+    template: `
+        <div class="section-card"><h3>布置作业</h3>
+            <el-form :model="form" label-width="100px" style="max-width:700px">
+                <el-form-item label="作业名称"><el-input v-model="form.title" placeholder="如：第一章课后作业"/></el-form-item>
+                <el-form-item label="作业描述"><el-input v-model="form.description" type="textarea" :rows="2"/></el-form-item>
+                <el-form-item label="教学班级"><el-select v-model="form.teachingClassId" placeholder="选择教学班级" style="width:100%"><el-option v-for="tc in tcList" :key="tc.id" :label="tc.name" :value="tc.id"/></el-select></el-form-item>
+                <el-form-item label="截止时间"><el-date-picker v-model="form.deadline" type="datetime" placeholder="选择截止时间" style="width:100%" value-format="YYYY-MM-DDTHH:mm:ss"/></el-form-item>
+                <el-form-item label="选择题目">
+                    <div style="margin-bottom:8px">
+                        <el-input v-model="qKeyword" placeholder="搜索题目" size="small" style="width:200px;margin-right:8px" clearable/>
+                        <el-select v-model="qType" placeholder="题型" size="small" style="width:120px;margin-right:8px" clearable><el-option v-for="(v,k) in TYPE_MAP" :key="k" :label="v" :value="k"/></el-select>
+                        <el-button size="small" @click="searchQuestions">搜索</el-button>
+                    </div>
+                    <el-table :data="questions" border stripe @selection-change="onSelect" ref="qTable" max-height="300">
+                        <el-table-column type="selection" width="50"/>
+                        <el-table-column prop="id" label="ID" width="60"/>
+                        <el-table-column prop="type" label="题型" width="100"><template #default="{row}">{{TYPE_MAP[row.type]}}</template></el-table-column>
+                        <el-table-column prop="content" label="题干" show-overflow-tooltip/>
+                        <el-table-column prop="difficulty" label="难度" width="80"><template #default="{row}"><el-tag :type="DIFF_MAP[row.difficulty]?.type" size="small">{{DIFF_MAP[row.difficulty]?.label}}</el-tag></template></el-table-column>
+                    </el-table>
+                </el-form-item>
+                <el-form-item label="已选题目">
+                    <el-tag v-for="(q,i) in selected" :key="i" closable @close="selected.splice(i,1)" style="margin:2px">
+                        #{{q.id}} {{TYPE_MAP[q.type]}} — {{(q.content||'').substring(0,30)}}...
+                        <el-input-number v-model="q.pickScore" :min="1" :max="100" size="small" style="width:80px;margin-left:4px" controls-position="right"/>
+                    </el-tag>
+                    <p v-if="!selected.length" style="color:#909399">请在题目列表中勾选</p>
+                </el-form-item>
+                <el-form-item>
+                    <el-button type="primary" @click="submit" :loading="submitting">布置作业</el-button>
+                    <el-button @click="reset">重置</el-button>
+                </el-form-item>
+            </el-form>
+        </div>`,
+    setup(props, {emit}) {
+        const form = reactive({title:'',description:'',teachingClassId:null,deadline:''})
+        const tcList = ref([]), questions = ref([]), selected = ref([]), qKeyword = ref(''), qType = ref(''), submitting = ref(false)
+        const searchQuestions = async () => { try { const r = await api.searchQuestions({page:1,size:100,keyword:qKeyword.value,type:qType.value}); questions.value = r.data.data.records } catch(e) { console.error(e) } }
+        const onSelect = sel => { selected.value = sel.map(q => ({...q, pickScore: q.score||5})) }
+        const submit = async () => {
+            if (!form.title||!form.teachingClassId||!form.deadline||!selected.value.length) { $m('请填写完整信息','error'); return }
+            submitting.value = true
+            try {
+                const d = { title: form.title, description: form.description, teachingClassId: form.teachingClassId, deadline: form.deadline,
+                    questions: selected.value.map((q,i) => ({questionId: q.id, sortOrder: i+1, score: q.pickScore})) }
+                await api.assignHomework(d); $m('布置成功'); reset(); emit('assigned')
+            } catch(e) { $m(e.response?.data?.msg||'布置失败','error') } finally { submitting.value = false }
+        }
+        const reset = () => { Object.assign(form, {title:'',description:'',teachingClassId:null,deadline:''}); selected.value = []; questions.value = [] }
+        onMounted(async () => { try { const r = await api.teachingClasses({page:1,size:50}); tcList.value = r.data.data.records } catch(e) { console.error(e) } })
+        return { form, tcList, questions, selected, qKeyword, qType, submitting, searchQuestions, onSelect, submit, reset, TYPE_MAP, DIFF_MAP }
+    }
+})
+
+// ======== Teacher Grading ========
+const TeacherGrading = defineComponent({
+    template: `
+        <div class="section-card"><h3>批改作业</h3>
+            <el-form :inline="true"><el-form-item label="选择作业">
+                <el-select v-model="selectedHwId" placeholder="请选择作业" @change="loadSubmissions" size="small" style="width:300px">
+                    <el-option v-for="h in hwList" :key="h.id" :label="h.title" :value="h.id"/>
+                </el-select>
+            </el-form-item></el-form>
+            <el-table :data="submissions" border stripe v-if="selectedHwId">
+                <el-table-column prop="studentId" label="学生ID" width="80"/>
+                <el-table-column prop="studentName" label="姓名" width="100"/>
+                <el-table-column prop="status" label="状态" width="100"><template #default="{row}"><el-tag :type="row.status==='GRADED'?'success':row.status==='SUBMITTED'?'warning':'info'" size="small">{{row.status}}</el-tag></template></el-table-column>
+                <el-table-column prop="totalScore" label="总分" width="80"/>
+                <el-table-column label="操作" width="120">
+                    <template #default="{row}">
+                        <el-button size="small" type="primary" @click="openGrading(row)" :disabled="row.status==='NOT_SUBMITTED'">批改</el-button>
+                    </template>
+                </el-table-column>
+            </el-table>
+            <el-dialog title="批改" v-model="gradeVisible" width="700px">
+                <div v-for="(a,i) in answers" :key="i" style="margin-bottom:16px;padding:12px;background:#f5f7fa;border-radius:4px">
+                    <p style="font-weight:bold">题目{{i+1}} <el-tag size="small">{{TYPE_MAP[a.questionType]||'未知'}}</el-tag></p>
+                    <p style="color:#606266">答案: {{a.studentAnswer||'(未作答)'}}</p>
+                    <div style="margin-top:8px">
+                        <el-input-number v-model="a._score" :min="0" :max="100" size="small" placeholder="得分"/>
+                        <el-input v-model="a._comment" placeholder="评语" size="small" style="width:200px;margin-left:8px"/>
+                        <el-button size="small" type="primary" @click="saveGrade(a)" style="margin-left:8px" :disabled="a._score===null">保存评分</el-button>
+                    </div>
+                </div>
+            </el-dialog>
+        </div>`,
+    setup() {
+        const hwList = ref([]), selectedHwId = ref(null), submissions = ref([]), answers = ref([]), gradeVisible = ref(false)
+        onMounted(async () => { try { const r = await api.teacherHomeworks({page:1,size:50}); hwList.value = r.data.data.records } catch(e) { console.error(e) } })
+        const loadSubmissions = async () => { try { const r = await api.homeworkSubmissions(selectedHwId.value); submissions.value = r.data.data } catch(e) { console.error(e) } }
+        const openGrading = async row => {
+            gradeVisible.value = true
+            try {
+                const r = await axios.get(`/api/teacher/homeworks/${selectedHwId.value}/submissions/${row.submissionId}/answers`)
+                answers.value = (r.data.data||[]).map(a => ({...a, _score: a.score, _comment: a.comment||''}))
+            } catch(e) { console.error(e) }
+        }
+        const saveGrade = async a => { try { await api.gradeAnswer(selectedHwId.value, a.id, {score: a._score, comment: a._comment}); a.score = a._score; a.comment = a._comment; $m('评分已保存') } catch(e) { $m('失败','error') } }
+        return { hwList, selectedHwId, submissions, answers, gradeVisible, loadSubmissions, openGrading, saveGrade, TYPE_MAP }
+    }
+})
+
+// ======== Student Homeworks ========
+const StudentHomeworks = defineComponent({
+    template: `
+        <div>
+            <!-- 作业列表 -->
+            <div class="section-card" v-if="!viewingHw">
+                <h3>我的作业</h3>
+                <el-tabs v-model="tab" @tab-change="load">
+                    <el-tab-pane label="待完成" name="new"/>
+                    <el-tab-pane label="已完成" name="history"/>
+                </el-tabs>
+                <el-table :data="filteredList" border stripe v-loading="loading">
+                    <el-table-column prop="title" label="作业名称"/>
+                    <el-table-column prop="deadline" label="截止时间" width="180"><template #default="{row}">{{formatD(row.deadline)}}</template></el-table-column>
+                    <el-table-column prop="status" label="状态" width="100"><template #default="{row}"><el-tag :type="statusTag(row.status)" size="small">{{statusLabel(row.status)}}</el-tag></template></el-table-column>
+                    <el-table-column prop="totalScore" label="总分" width="80"/>
+                    <el-table-column label="操作" width="200">
+                        <template #default="{row}">
+                            <el-button size="small" type="primary" @click="openHw(row)" v-if="row.status!=='GRADED'&&row.status!=='SUBMITTED'">去完成</el-button>
+                            <el-button size="small" type="success" @click="openHw(row)" v-else-if="row.status==='SUBMITTED'">修改</el-button>
+                            <el-button size="small" type="info" @click="viewResult(row)" v-else>查看结果</el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+            </div>
+
+            <!-- 做作业 -->
+            <div class="section-card" v-if="viewingHw && !viewingResult">
+                <h3>{{currentHw?.title}} <el-tag size="small" :type="statusTag(currentHw?.status)">{{statusLabel(currentHw?.status)}}</el-tag></h3>
+                <p style="color:#909399;margin-bottom:12px">截止时间: {{formatD(currentHw?.deadline)}} | 总分: {{currentHw?.totalScore}}</p>
+                <el-divider/>
+                <div v-for="(q,i) in questions" :key="i" style="margin-bottom:20px;padding:12px;background:#fafafa;border-radius:6px">
+                    <p style="font-weight:bold;margin-bottom:8px">{{i+1}}. {{q.content}} <el-tag size="small">{{TYPE_MAP[q.type]}}</el-tag> <span style="color:#E6A23C">({{q.score}}分)</span></p>
+                    <!-- 选择题 -->
+                    <template v-if="q.type==='SINGLE_CHOICE'">
+                        <el-radio-group v-model="answers[i]" style="display:flex;flex-direction:column;gap:6px">
+                            <el-radio v-for="opt in q.options" :key="opt.label" :value="opt.label">{{opt.label}}. {{opt.content}}</el-radio>
+                        </el-radio-group>
+                    </template>
+                    <template v-if="q.type==='MULTI_CHOICE'">
+                        <el-checkbox-group v-model="answers[i]" style="display:flex;flex-direction:column;gap:6px">
+                            <el-checkbox v-for="opt in q.options" :key="opt.label" :value="opt.label" :label="opt.label">{{opt.label}}. {{opt.content}}</el-checkbox>
+                        </el-checkbox-group>
+                    </template>
+                    <!-- 判断题 -->
+                    <template v-if="q.type==='TRUE_FALSE'">
+                        <el-radio-group v-model="answers[i]">
+                            <el-radio value="对">对</el-radio>
+                            <el-radio value="错">错</el-radio>
+                        </el-radio-group>
+                    </template>
+                    <!-- 问答题 -->
+                    <template v-if="q.type==='ESSAY'">
+                        <el-input v-model="answers[i]" type="textarea" :rows="4" placeholder="请输入你的答案..."/>
+                    </template>
+                </div>
+                <el-button type="primary" size="large" @click="doSubmit" :loading="submitting" :disabled="!canSubmit">提交作业</el-button>
+                <el-button size="large" @click="viewingHw=false;viewingResult=false;answers=[]">返回列表</el-button>
+            </div>
+
+            <!-- 查看结果 -->
+            <div class="section-card" v-if="viewingResult">
+                <h3>作业结果</h3>
+                <p style="color:#909399;margin-bottom:8px">总分: {{result?.submission?.totalScore||0}} | 客观题: {{result?.submission?.autoScore||0}} | 主观题: {{result?.submission?.manualScore||0}}</p>
+                <el-divider/>
+                <div v-for="(a,i) in (result?.answers||[])" :key="i" style="margin-bottom:12px;padding:12px;background:#fafafa;border-radius:6px">
+                    <p><b>{{i+1}}.</b> 你的答案: <span :style="{color: a.score>0?'#67c23a':'#f56c6c'}">{{a.studentAnswer||'(未作答)'}}</span></p>
+                    <p>得分: {{a.score||0}} <span v-if="a.comment" style="color:#909399">| 评语: {{a.comment}}</span></p>
+                </div>
+                <el-button size="large" @click="viewingResult=false;viewingHw=false">返回列表</el-button>
+            </div>
+        </div>`,
+    setup() {
+        const list = ref([]), tab = ref('new'), loading = ref(false), viewingHw = ref(false), viewingResult = ref(false)
+        const currentHw = ref(null), questions = ref([]), answers = ref([]), submitting = ref(false), result = ref(null)
+        const load = async () => { loading.value = true; try { const r = await api.studentHomeworks({page:1,size:50}); list.value = r.data.data.records } catch(e) { console.error(e) } finally { loading.value = false } }
+        const filteredList = computed(() => {
+            return list.value.filter(h => {
+                if (tab.value === 'new') return h.status === 'NOT_SUBMITTED' || h.status === 'SUBMITTED'
+                return h.status === 'GRADED' || h.status === 'CLOSED'
+            })
+        })
+        const openHw = async row => {
+            viewingHw.value = true; viewingResult.value = false; currentHw.value = row
+            try { const r = await api.studentHomeworkDetail(row.id); questions.value = r.data.data.questions||[]; answers.value = new Array(questions.value.length).fill('') } catch(e) { $m('加载失败','error') }
+        }
+        const viewResult = async row => {
+            viewingResult.value = true; viewingHw.value = false; currentHw.value = row
+            try { const r = await api.homeworkResult(row.id); result.value = r.data.data } catch(e) { $m('加载失败','error') }
+        }
+        const canSubmit = computed(() => currentHw.value && questions.value.length > 0)
+        const doSubmit = async () => {
+            const d = { answers: questions.value.map((q,i) => ({questionId: q.id, answer: Array.isArray(answers.value[i]) ? answers.value[i].join('') : (answers.value[i]||'')})) }
+            submitting.value = true
+            try { await api.submitHomework(currentHw.value.id, d); $m('提交成功'); viewingHw.value = false; load() } catch(e) { $m(e.response?.data?.msg||'提交失败','error') }
+            finally { submitting.value = false }
+        }
+        const formatD = d => d ? d.substring(0,16) : ''
+        const statusTag = s => ({NOT_SUBMITTED:'info',SUBMITTED:'warning',GRADED:'success',CLOSED:'info'}[s]||'')
+        const statusLabel = s => ({NOT_SUBMITTED:'未提交',SUBMITTED:'已提交',GRADED:'已批改',CLOSED:'已关闭'}[s]||s)
+        onMounted(load)
+        return { list, tab, loading, viewingHw, viewingResult, currentHw, questions, answers, submitting, result, filteredList, load, openHw, viewResult, canSubmit, doSubmit, formatD, statusTag, statusLabel, TYPE_MAP }
+    }
+})
+
+// ======== Main App ========
+const app = createApp({
+    components: { AdminDashboard, AdminTeachers, AdminClasses, AdminStudents, AdminQuestions, AdminKnowledge, TeacherHomeworks, TeacherAssign, TeacherGrading, StudentHomeworks },
+    setup() {
+        const token = ref(localStorage.getItem('token')||'')
+        const userInfo = reactive(JSON.parse(localStorage.getItem('userInfo')||'{}'))
+        const role = computed(() => userInfo.role || '')
+        const roleTag = computed(() => ({ADMIN:'danger',TEACHER:'warning',STUDENT:'success'}[role.value]||''))
+        const roleLabel = computed(() => ({ADMIN:'管理员',TEACHER:'教师',STUDENT:'学生'}[role.value]||''))
+        const activeMenu = ref('')
+        const defaults = {ADMIN:'dashboard',TEACHER:'myHomeworks',STUDENT:'myHw'}
+        const currentView = ref('AdminDashboard')
+        const viewMap = {
+            ADMIN: {dashboard:'AdminDashboard',teachers:'AdminTeachers',classes:'AdminClasses',students:'AdminStudents',questions:'AdminQuestions',knowledge:'AdminKnowledge'},
+            TEACHER: {myHomeworks:'TeacherHomeworks',assignHw:'TeacherAssign',grading:'TeacherGrading'},
+            STUDENT: {myHw:'StudentHomeworks'}
+        }
+        const updateView = () => {
+            const m = viewMap[role.value]
+            if (m && m[activeMenu.value]) currentView.value = m[activeMenu.value]
+        }
+
+        const loginForm = reactive({username:'',password:''})
+        const loginRules = {username:[{required:true,message:'请输入用户名'}],password:[{required:true,message:'请输入密码'}]}
+        const loginFormRef = ref(null), loading = ref(false)
+
+        const doLogin = async () => {
+            if (!loginFormRef.value) return
+            await loginFormRef.value.validate(async valid => {
+                if (!valid) return
+                loading.value = true
+                try {
+                    const r = await api.login({username:loginForm.username,password:loginForm.password})
+                    const t = r.data.data.token
+                    localStorage.setItem('token', t); token.value = t
+                    try {
+                        const me = await axios.get('/api/auth/me')
+                        const u = {username:me.data.data.username, realName:me.data.data.realName, role:me.data.data.role}
+                        localStorage.setItem('userInfo', JSON.stringify(u))
+                        Object.assign(userInfo, u)
+                    } catch(e) {
+                        const u = {username:loginForm.username, realName:loginForm.username, role:r.data.data.role}
+                        localStorage.setItem('userInfo', JSON.stringify(u))
+                        Object.assign(userInfo, u)
+                    }
+                    activeMenu.value = defaults[userInfo.role] || 'dashboard'; updateView()
+                } catch(e) { $m(e.response?.data?.msg || '登录失败','error') } finally { loading.value = false }
+            })
+        }
+        const logout = () => { localStorage.clear(); token.value = ''; location.reload() }
+        const handleMenuSelect = idx => { activeMenu.value = idx; updateView() }
+        // 快捷导航
+        const goHomeworks = () => { activeMenu.value = 'myHomeworks'; updateView() }
+        const goGrading = () => { activeMenu.value = 'grading'; updateView() }
+
+        onMounted(() => { if (token.value) { activeMenu.value = defaults[role.value] || 'dashboard'; updateView() } })
+        return { token, userInfo, role, roleTag, roleLabel, activeMenu, currentView, loginForm, loginRules, loginFormRef, loading, doLogin, logout, handleMenuSelect, goHomeworks, goGrading }
+    }
+})
+
+app.use(ElementPlus)
+app.mount('#app')
+</script>
+</body>
+</html>

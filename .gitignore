@@ -1,0 +1,24 @@
+# ===== Maven / 构建产物 =====
+target/
+data/
+
+# ===== 本地工具（内置 Maven 发行版，不进版本库）=====
+tools/
+
+# ===== IDE =====
+.idea/
+*.iml
+.vscode/
+*.ipr
+*.iws
+
+# ===== 课程课件 / 大文件压缩包（非项目代码）=====
+*.pptx
+*.pdf
+*.zip
+
+# ===== 操作系统 / 杂项 =====
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
