@@ -176,10 +176,20 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
         List<Submission> subs = submissionDao.selectList(subQw);
         if (subs.isEmpty()) return new Page<>();
         List<Long> hwIds = subs.stream().map(Submission::getHomeworkId).distinct().toList();
-        return homeworkDao.selectPage(new Page<>(page, size),
+        Page<Homework> result = homeworkDao.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<Homework>()
                         .in(Homework::getId, hwIds)
                         .orderByDesc(Homework::getCreateTime));
+        // 学生视角状态：status 覆盖为该学生的提交状态（NOT_SUBMITTED/SUBMITTED/GRADED），
+        // 而非作业全局状态（PUBLISHED/CLOSED）——前端"待完成/已完成"过滤与操作按钮均按提交状态判断，
+        // 否则发布中的作业（PUBLISHED）会被前端两个 tab 同时滤掉，学生永远看不到作业
+        Map<Long, String> subStatus = new HashMap<>();
+        for (Submission s : subs) subStatus.put(s.getHomeworkId(), s.getStatus());
+        for (Homework h : result.getRecords()) {
+            String st = subStatus.get(h.getId());
+            if (st != null) h.setStatus(st);
+        }
+        return result;
     }
 
     @Override

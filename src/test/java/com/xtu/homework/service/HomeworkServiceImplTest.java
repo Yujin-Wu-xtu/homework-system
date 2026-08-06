@@ -55,6 +55,13 @@ class HomeworkServiceImplTest {
         var page = homeworkService.listStudentHomeworks(3L, 1, 10);
         assertNotNull(page);
         // 学生3在班级1，教学班1包含班级1，应该有作业
+        assertFalse(page.getRecords().isEmpty());
+        // 学生视角状态：发布中的作业对未提交学生应显示为 NOT_SUBMITTED（而非作业全局状态 PUBLISHED），
+        // 否则前端"待完成"tab 过滤条件（NOT_SUBMITTED/SUBMITTED）匹配不到，学生看不到作业
+        Homework hw = page.getRecords().get(0);
+        assertNotNull(hw.getStatus());
+        assertTrue(List.of("NOT_SUBMITTED", "SUBMITTED", "GRADED").contains(hw.getStatus()),
+                "学生端作业列表 status 应为提交状态，实际: " + hw.getStatus());
     }
 
     @Test
