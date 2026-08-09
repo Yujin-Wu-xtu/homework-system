@@ -201,6 +201,18 @@ CREATE TABLE IF NOT EXISTS ai_material (
     INDEX idx_uploader (uploader_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AI出题资源文件表';
 
+-- 题干图片表（应用题富文本插图）
+CREATE TABLE IF NOT EXISTS question_image (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    file_name VARCHAR(200) NOT NULL COMMENT '原始文件名',
+    file_path VARCHAR(500) NOT NULL COMMENT '相对路径 data/question-images/xxx.png',
+    file_size BIGINT NOT NULL COMMENT '字节数',
+    file_type VARCHAR(20) NOT NULL COMMENT 'png/jpg/jpeg/gif/webp',
+    uploader_id BIGINT NOT NULL COMMENT '上传管理员ID',
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_uploader (uploader_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题干图片表';
+
 -- 邮箱注册验证码表
 CREATE TABLE IF NOT EXISTS verification_code (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

@@ -219,7 +219,7 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
             qm.put("content", q.getContent());
             qm.put("score", hq.getScore());
             // 安全：只返回题干/选项/分值，绝不返回 correctAnswer/referenceAnswer（学生端可见标准答案 = 作弊漏洞）
-            if (!"ESSAY".equals(q.getType())) {
+            if (q.isObjective()) {
                 List<QuestionOption> options = questionOptionDao.selectList(
                         new LambdaQueryWrapper<QuestionOption>()
                                 .eq(QuestionOption::getQuestionId, q.getId())

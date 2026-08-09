@@ -6,10 +6,19 @@
     <title>在线作业系统</title>
     <!-- 本地 vendor（CDN 离线化：不依赖 unpkg 外网，国内网络/服务器部署均可用） -->
     <link rel="stylesheet" href="/vendor/element-plus/index.css">
+    <!-- 富文本题干：wangeditor（编辑器）+ katex（公式）+ highlight.js（代码块）+ echarts（图表）+ dompurify（XSS 过滤） -->
+    <link rel="stylesheet" href="/vendor/wangeditor.css">
+    <link rel="stylesheet" href="/vendor/katex/katex.min.css">
+    <link rel="stylesheet" href="/vendor/hljs/github.min.css">
     <script src="/vendor/vue.global.prod.js"></script>
     <script src="/vendor/vue-router.global.js"></script>
     <script src="/vendor/element-plus/index.full.min.js"></script>
     <script src="/vendor/axios.min.js"></script>
+    <script src="/vendor/wangeditor.js"></script>
+    <script src="/vendor/katex/katex.min.js"></script>
+    <script src="/vendor/hljs/highlight.min.js"></script>
+    <script src="/vendor/echarts.min.js"></script>
+    <script src="/vendor/dompurify.min.js"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:'Microsoft YaHei',sans-serif;background:#f5f7fa}
@@ -60,8 +69,35 @@ axios.interceptors.response.use(r => r, err => {
 
 const $m = (msg, type='success') => ElementPlus.ElMessage[type](msg)
 const $c = (msg, title='提示') => ElementPlus.ElMessageBox.confirm(msg, title, {type:'warning'})
-const TYPE_MAP = {SINGLE_CHOICE:'单选题',MULTI_CHOICE:'多选题',TRUE_FALSE:'判断题',ESSAY:'问答题'}
+const TYPE_MAP = {SINGLE_CHOICE:'单选题',MULTI_CHOICE:'多选题',TRUE_FALSE:'判断题',ESSAY:'问答题',APPLICATION:'应用题'}
 const DIFF_MAP = {EASY:{label:'简单',type:'success'},MEDIUM:{label:'中等',type:'warning'},HARD:{label:'困难',type:'danger'}}
+
+// ======== 题型分类（与后端 Question.OBJECTIVE_TYPES/SUBJECTIVE_TYPES 一致）========
+const OBJ_TYPES = ['SINGLE_CHOICE','MULTI_CHOICE','TRUE_FALSE']
+const SUBJ_TYPES = ['ESSAY','APPLICATION']
+const isObjective = t => OBJ_TYPES.includes(t)
+const isSubjective = t => SUBJ_TYPES.includes(t)
+
+// ======== 富文本题干工具（应用题：图片/图表/公式/代码块）========
+// 富文本 HTML → 纯文本（列表截断显示用，避免显示标签源码）
+const stripHtml = html => { const d = document.createElement('div'); d.innerHTML = html || ''; return (d.textContent || '').trim() }
+// DOMPurify 清洗（学生端 v-html 渲染题干，防 XSS 注入；保留 data-chart 图表配置属性）
+const safeHtml = html => DOMPurify.sanitize(html || '', { ADD_ATTR: ['data-chart'] })
+// 渲染题干富文本容器：清洗注入 + 扫描图表(ECharts)/代码块(hljs)，幂等（重复调用先 dispose）
+const renderRich = el => {
+    if (!el) return
+    el.querySelectorAll('.q-chart').forEach(c => {
+        try {
+            const opt = JSON.parse(c.getAttribute('data-chart') || '{}')
+            if (opt && opt.series) {
+                const exist = echarts.getInstanceByDom(c)
+                if (exist) exist.dispose()
+                echarts.init(c).setOption(opt)
+            }
+        } catch(e) { console.error('图表渲染失败:', e) }
+    })
+    el.querySelectorAll('pre code').forEach(b => { try { hljs.highlightElement(b) } catch(e){} })
+}
 
 const api = {
     login: d => axios.post('/api/auth/login', d),
@@ -104,6 +140,10 @@ const api = {
     materials: () => axios.get('/api/admin/materials'),
     uploadMaterial: file => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/materials', fd) },
     deleteMaterial: id => axios.delete('/api/admin/materials/' + id),
+    // 题干图片（应用题富文本插图）
+    questionImages: () => axios.get('/api/admin/question-images'),
+    uploadQuestionImage: file => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/question-images', fd) },
+    deleteQuestionImage: id => axios.delete('/api/admin/question-images/' + id),
     // Admin - Knowledge Points
     knowledgePoints: k => axios.get('/api/admin/knowledge-points', {params: {keyword: k || ''}}),
     addKnowledgePoint: d => axios.post('/api/admin/knowledge-points', d),
@@ -390,7 +430,7 @@ const AdminQuestions = defineComponent({
             <el-table :data="list" style="margin-top:12px" border stripe>
                 <el-table-column prop="id" label="ID" width="60"/>
                 <el-table-column prop="type" label="题型" width="100"><template #default="{row}">{{TYPE_MAP[row.type]||row.type}}</template></el-table-column>
-                <el-table-column prop="content" label="题干" show-overflow-tooltip/>
+                <el-table-column prop="content" label="题干" show-overflow-tooltip><template #default="{row}">{{stripHtml(row.content)}}</template></el-table-column>
                 <el-table-column prop="difficulty" label="难度" width="80">
                     <template #default="{row}"><el-tag :type="DIFF_MAP[row.difficulty]?.type||'info'" size="small">{{DIFF_MAP[row.difficulty]?.label||row.difficulty}}</el-tag></template>
                 </el-table-column>
@@ -406,15 +446,22 @@ const AdminQuestions = defineComponent({
                 </el-table-column>
             </el-table>
             <!-- 新增/编辑题目弹窗 -->
-            <el-dialog :title="isEdit?'编辑题目':'新增题目'" v-model="dialogVisible" width="650px">
+            <el-dialog :title="isEdit?'编辑题目':'新增题目'" v-model="dialogVisible" width="880px" @closed="destroyEditor">
                 <el-form :model="form" label-width="80px">
                     <el-form-item label="题型"><el-select v-model="form.type" style="width:100%" :disabled="isEdit"><el-option v-for="(v,k) in TYPE_MAP" :key="k" :label="v" :value="k"/></el-select></el-form-item>
-                    <el-form-item label="题干"><el-input v-model="form.content" type="textarea" :rows="3"/></el-form-item>
-                    <el-form-item label="标准答案" v-if="form.type!=='ESSAY'"><el-input v-model="form.correctAnswer" placeholder="单选题填选项字母如C，多选填ACD，判断填对/错"/></el-form-item>
-                    <el-form-item label="参考答案" v-if="form.type==='ESSAY'"><el-input v-model="form.referenceAnswer" type="textarea" :rows="3" placeholder="参考答案文本"/></el-form-item>
+                    <el-form-item label="题干">
+                        <div ref="toolbarBox" style="border:1px solid #dcdfe6;border-bottom:none;border-radius:4px 4px 0 0;z-index:2000"></div>
+                        <div ref="editorBox" style="border:1px solid #dcdfe6;border-radius:0 0 4px 4px;z-index:2000"></div>
+                        <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+                            <el-button size="small" type="primary" plain @click="openChartDialog">📊 插入图表</el-button>
+                            <span style="color:#909399;font-size:12px">富文本编辑：支持图片 / 公式 / 代码块（应用题题干推荐使用）</span>
+                        </div>
+                    </el-form-item>
+                    <el-form-item label="标准答案" v-if="isObjective(form.type)"><el-input v-model="form.correctAnswer" placeholder="单选题填选项字母如C，多选填ACD，判断填对/错"/></el-form-item>
+                    <el-form-item label="参考答案" v-if="isSubjective(form.type)"><el-input v-model="form.referenceAnswer" type="textarea" :rows="3" placeholder="参考答案文本"/></el-form-item>
                     <el-form-item label="难度"><el-select v-model="form.difficulty" style="width:100%"><el-option v-for="(v,k) in DIFF_MAP" :key="k" :label="v.label" :value="k"/></el-select></el-form-item>
                     <el-form-item label="分值"><el-input-number v-model="form.score" :min="1" :max="100"/></el-form-item>
-                    <el-form-item label="选项" v-if="form.type==='SINGLE_CHOICE'||form.type==='MULTI_CHOICE'">
+                    <el-form-item label="选项" v-if="isObjective(form.type)&&form.type!=='TRUE_FALSE'">
                         <div v-for="(o,i) in form.options" :key="i" style="margin-bottom:4px;display:flex;align-items:center;gap:8px">
                             <el-input v-model="o.label" placeholder="标签" style="width:80px"/>
                             <el-input v-model="o.content" placeholder="选项内容" style="flex:1"/>
@@ -425,6 +472,22 @@ const AdminQuestions = defineComponent({
                     <el-form-item label="知识点"><el-select v-model="form.knowledgePointIds" multiple placeholder="选择关联知识点" style="width:100%"><el-option v-for="kp in kpList" :key="kp.id" :label="kp.name" :value="kp.id"/></el-select></el-form-item>
                 </el-form>
                 <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+            </el-dialog>
+            <!-- 图表配置弹窗（插入到题干富文本） -->
+            <el-dialog title="📊 插入图表" v-model="chartVisible" width="620px">
+                <el-form label-width="70px">
+                    <el-form-item label="图表类型">
+                        <el-radio-group v-model="chartForm.type">
+                            <el-radio-button value="bar">柱状图</el-radio-button>
+                            <el-radio-button value="line">折线图</el-radio-button>
+                            <el-radio-button value="pie">饼图</el-radio-button>
+                        </el-radio-group>
+                    </el-form-item>
+                    <el-form-item label="标题"><el-input v-model="chartForm.title" placeholder="图表标题（可空）"/></el-form-item>
+                    <el-form-item label="数据"><el-input v-model="chartForm.dataText" type="textarea" :rows="6" placeholder="每行一个数据项：名称,数值&#10;例：&#10;周一,120&#10;周二,200&#10;周三,150"/></el-form-item>
+                    <el-form-item label="预览"><div ref="chartPreview" style="width:100%;height:220px;border:1px dashed #dcdfe6;border-radius:4px"></div></el-form-item>
+                </el-form>
+                <template #footer><el-button @click="chartVisible=false">取消</el-button><el-button type="primary" @click="insertChart">插入图表</el-button></template>
             </el-dialog>
             <!-- AI 出题弹窗 -->
             <el-dialog title="🤖 AI 生成题目" v-model="aiVisible" width="880px">
@@ -476,7 +539,7 @@ const AdminQuestions = defineComponent({
                     <el-table :data="aiDrafts" border stripe max-height="420" @selection-change="rows=>{aiChecked = aiDrafts.map(d=>rows.includes(d))}">
                         <el-table-column type="selection" width="40"/>
                         <el-table-column prop="type" label="题型" width="90"><template #default="{row}">{{TYPE_MAP[row.type]||row.type}}</template></el-table-column>
-                        <el-table-column prop="content" label="题干" show-overflow-tooltip/>
+                        <el-table-column prop="content" label="题干" show-overflow-tooltip><template #default="{row}">{{stripHtml(row.content)}}</template></el-table-column>
                         <el-table-column prop="knowledgePoint" label="知识点" width="110"/>
                         <el-table-column prop="difficulty" label="难度" width="80"><template #default="{row}">{{DIFF_MAP[row.difficulty]?.label||row.difficulty}}</template></el-table-column>
                         <el-table-column label="操作" width="80"><template #default="{row,$index}"><el-button size="small" @click="aiEdit(row,$index)">编辑</el-button></template></el-table-column>
@@ -491,8 +554,8 @@ const AdminQuestions = defineComponent({
                         <el-select v-model="aiEditForm.type" style="width:100%"><el-option v-for="(v,k) in TYPE_MAP" :key="k" :label="v" :value="k"/></el-select>
                     </el-form-item>
                     <el-form-item label="题干"><el-input v-model="aiEditForm.content" type="textarea" :rows="3"/></el-form-item>
-                    <el-form-item label="标准答案" v-if="aiEditForm.type!=='ESSAY'"><el-input v-model="aiEditForm.correctAnswer"/></el-form-item>
-                    <el-form-item label="参考答案" v-if="aiEditForm.type==='ESSAY'"><el-input v-model="aiEditForm.referenceAnswer" type="textarea" :rows="3"/></el-form-item>
+                    <el-form-item label="标准答案" v-if="isObjective(aiEditForm.type)"><el-input v-model="aiEditForm.correctAnswer"/></el-form-item>
+                    <el-form-item label="参考答案" v-if="isSubjective(aiEditForm.type)"><el-input v-model="aiEditForm.referenceAnswer" type="textarea" :rows="3"/></el-form-item>
                     <el-form-item label="选项" v-if="aiEditForm.type==='SINGLE_CHOICE'||aiEditForm.type==='MULTI_CHOICE'">
                         <div v-for="(o,i) in aiEditForm.options" :key="i" style="margin-bottom:4px;display:flex;align-items:center;gap:8px">
                             <el-input v-model="o.label" placeholder="标签" style="width:70px"/>
@@ -519,13 +582,91 @@ const AdminQuestions = defineComponent({
         const load = async () => { try { const r = await api.questions({page:1,size:100,keyword:keyword.value,type:filterType.value,difficulty:filterDifficulty.value}); list.value = r.data.data.records } catch(e) { console.error(e) } }
         const toggle = async id => { try { await api.toggleQuestion(id); load() } catch(e) { console.error(e) } }
         const del = id => { $c('确定删除该题目？').then(async ()=>{ await api.deleteQuestion(id); load(); $m('已删除') }).catch(()=>{}) }
-        const showAdd = () => { Object.assign(form, {id:null,type:'SINGLE_CHOICE',content:'',correctAnswer:'',referenceAnswer:'',difficulty:'MEDIUM',score:5,options:[],knowledgePointIds:[]}); isEdit.value = false; dialogVisible.value = true }
+        // ========== 富文本题干编辑器（wangeditor 5：图片/公式/代码块）==========
+        let editor = null
+        const editorBox = ref(null), toolbarBox = ref(null)
+        const destroyEditor = () => { try { if (editor) { editor.destroy(); editor = null } } catch(e){} }
+        const initEditor = () => {
+            destroyEditor()
+            if (!editorBox.value || !window.wangEditor) return
+            try {
+                editor = window.wangEditor.createEditor({
+                    selector: editorBox.value,
+                    html: form.content || '',
+                    config: {
+                        placeholder: '输入题干，可插入图片 / 公式 / 代码块 / 图表',
+                        MENU_CONF: {
+                            uploadImage: {
+                                // 自定义图片上传：走后端接口（管理员鉴权），插入 <img src="/question-images/xxx">
+                                async customUpload(file, insertFn) {
+                                    try {
+                                        const r = await api.uploadQuestionImage(file)
+                                        if (r.data.code !== 200) { $m(r.data.msg || '图片上传失败', 'error'); return }
+                                        insertFn(r.data.data.url, r.data.data.fileName, r.data.data.url)
+                                    } catch(e) { $m(e.response?.data?.msg || '图片上传失败', 'error') }
+                                }
+                            }
+                        }
+                    }
+                })
+                window.wangEditor.createToolbar({
+                    editor, selector: toolbarBox.value,
+                    config: { excludeKeys: ['fullScreen', 'group-video', 'insertVideo', 'group-image'] }
+                })
+            } catch(e) { console.error('富文本编辑器初始化失败:', e) }
+        }
+        // ========== 图表配置（插入到题干）==========
+        const chartVisible = ref(false)
+        const chartForm = reactive({ type:'bar', title:'', dataText:'周一,120\n周二,200\n周三,150' })
+        const chartPreview = ref(null)
+        let chartPreviewIns = null
+        const buildChartOption = () => {
+            const rows = chartForm.dataText.split('\n').map(l => l.trim()).filter(Boolean)
+                .map(l => { const p = l.split(/[,，]/); return { name: (p[0]||'').trim(), value: Number(p[1]) } })
+                .filter(r => r.name && !isNaN(r.value))
+            const t = chartForm.title || ''
+            if (chartForm.type === 'pie') {
+                return { title: t ? {text:t, left:'center'} : undefined, tooltip:{trigger:'item'},
+                    series:[{ type:'pie', radius:'60%', data: rows, label:{formatter:'{b}: {c}'} }] }
+            }
+            return { title: t ? {text:t, left:'center'} : undefined, tooltip:{trigger:'axis'},
+                xAxis:{type:'category', data: rows.map(r=>r.name)}, yAxis:{type:'value'},
+                series:[{ type: chartForm.type==='bar' ? 'bar' : 'line', data: rows.map(r=>r.value), smooth: true }] }
+        }
+        const renderChartPreview = () => {
+            if (!chartPreview.value) return
+            try {
+                const opt = buildChartOption()
+                if (!opt.series || !opt.series[0].data || !opt.series[0].data.length) return
+                if (chartPreviewIns) { chartPreviewIns.dispose(); chartPreviewIns = null }
+                chartPreviewIns = echarts.init(chartPreview.value)
+                chartPreviewIns.setOption(opt)
+            } catch(e) { console.error('图表预览失败:', e) }
+        }
+        watch(chartForm, () => renderChartPreview(), { deep: true })
+        const openChartDialog = () => { chartVisible.value = true; nextTick(() => setTimeout(renderChartPreview, 100)) }
+        const insertChart = () => {
+            const opt = buildChartOption()
+            if (!opt.series || !opt.series[0].data || !opt.series[0].data.length) { $m('请填写至少一行数据（名称,数值）', 'error'); return }
+            if (!editor) return
+            const json = JSON.stringify(opt).replace(/&/g, '&amp;').replace(/'/g, '&#39;')
+            editor.dangerouslyInsertHtml(`<div class="q-chart" style="width:100%;height:300px" data-chart='${json}'>图表加载中...</div>`)
+            chartVisible.value = false
+        }
+        // ========== 新增/编辑 ==========
+        const showAdd = () => {
+            Object.assign(form, {id:null,type:'SINGLE_CHOICE',content:'',correctAnswer:'',referenceAnswer:'',difficulty:'MEDIUM',score:5,options:[],knowledgePointIds:[]})
+            isEdit.value = false; dialogVisible.value = true
+            nextTick(() => setTimeout(initEditor, 150))  // 等 dialog 渲染完成（含动画）
+        }
         const edit = async row => {
             Object.assign(form, {id:row.id,type:row.type,content:row.content,correctAnswer:row.correctAnswer||'',referenceAnswer:row.referenceAnswer||'',difficulty:row.difficulty,score:Number(row.score)||5,options:[],knowledgePointIds:[]})
             isEdit.value = true; dialogVisible.value = true
             try { const [or, kr] = await Promise.all([api.questionOptions(row.id), api.questionKps(row.id)]); form.options = or.data.data || []; form.knowledgePointIds = kr.data.data || [] } catch(e) { console.error(e) }
+            nextTick(() => setTimeout(initEditor, 150))
         }
         const save = async () => {
+            if (editor) form.content = editor.getHtml()  // 同步富文本编辑器内容
             const d = { content: form.content, correctAnswer: form.correctAnswer, referenceAnswer: form.referenceAnswer, difficulty: form.difficulty, score: form.score, knowledgePointIds: form.knowledgePointIds }
             if (form.type==='SINGLE_CHOICE'||form.type==='MULTI_CHOICE') d.options = form.options.filter(o => o.label && o.content)
             try {
@@ -533,8 +674,8 @@ const AdminQuestions = defineComponent({
                     await api.updateQuestion(form.id, d); dialogVisible.value = false; load(); $m('修改成功')
                 } else {
                     d.type = form.type
-                    // 录入查重：命中相似题则询问是否仍要保存（需求要求）
-                    const dup = await api.checkDuplicate({content: form.content, type: form.type})
+                    // 录入查重：命中相似题则询问是否仍要保存（需求要求）；用纯文本查重，避免富文本 HTML 标签干扰 Jaccard
+                    const dup = await api.checkDuplicate({content: stripHtml(form.content), type: form.type})
                     const dups = dup.data.data || []
                     const proceed = dups.length === 0 ? Promise.resolve()
                         : $c(`检测到 ${dups.length} 道相似题目（ID: ${dups.map(x=>x.id).join(', ')}），是否仍要保存？`, '题目查重提示')
@@ -637,7 +778,9 @@ const AdminQuestions = defineComponent({
             else $m(msg)
         }
         onMounted(async () => { load(); try { const r = await api.knowledgePoints(); kpList.value = r.data.data } catch(e) { console.error(e) } })
-        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, load, toggle, del, showAdd, edit, save, uploadQuestions, aiVisible, aiType, aiCount, aiDifficulty, aiMaterial, aiDrafts, aiLoading, aiImporting, aiChecked, aiCheckAll, aiEditVisible, aiEditForm, materials, aiMaterialId, openAi, aiRun, materialUpload, materialDelete, aiEdit, aiImport }
+        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, load, toggle, del, showAdd, edit, save, uploadQuestions,
+            editorBox, toolbarBox, destroyEditor, chartVisible, chartForm, chartPreview, openChartDialog, insertChart,
+            aiVisible, aiType, aiCount, aiDifficulty, aiMaterial, aiDrafts, aiLoading, aiImporting, aiChecked, aiCheckAll, aiEditVisible, aiEditForm, materials, aiMaterialId, openAi, aiRun, materialUpload, materialDelete, aiEdit, aiImport }
     }
 })
 
@@ -891,7 +1034,7 @@ const TeacherHomeworks = defineComponent({
                     <p><b>题目{{i+1}}:</b> <el-tag size="small">{{TYPE_MAP[a.questionType]||'未知'}}</el-tag></p>
                     <p><b>学生答案:</b> {{a.studentAnswer||'(未作答)'}}</p>
                     <p v-if="a.score!==null"><b>得分:</b> {{a.score}} <span v-if="a.comment" style="color:#909399">| 评语: {{a.comment}}</span></p>
-                    <div v-if="a.questionType==='ESSAY'&&a.score===null" style="margin-top:4px">
+                    <div v-if="isSubjective(a.questionType)&&a.score===null" style="margin-top:4px">
                         <el-input-number v-model="a._score" :min="0" :max="100" size="small" placeholder="分数"/>
                         <el-input v-model="a._comment" placeholder="评语" size="small" style="width:200px;margin-left:8px"/>
                         <el-button size="small" type="primary" @click="doGrade(a)" style="margin-left:8px">评分</el-button>
@@ -944,7 +1087,7 @@ const TeacherAssign = defineComponent({
                         <el-table-column type="selection" width="50"/>
                         <el-table-column prop="id" label="ID" width="60"/>
                         <el-table-column prop="type" label="题型" width="100"><template #default="{row}">{{TYPE_MAP[row.type]}}</template></el-table-column>
-                        <el-table-column prop="content" label="题干" show-overflow-tooltip/>
+                        <el-table-column prop="content" label="题干" show-overflow-tooltip><template #default="{row}">{{stripHtml(row.content)}}</template></el-table-column>
                         <el-table-column prop="difficulty" label="难度" width="80"><template #default="{row}"><el-tag :type="DIFF_MAP[row.difficulty]?.type" size="small">{{DIFF_MAP[row.difficulty]?.label}}</el-tag></template></el-table-column>
                     </el-table>
                 </el-form-item>
@@ -966,7 +1109,7 @@ const TeacherAssign = defineComponent({
                     <el-table-column type="index" label="#" width="50"/>
                     <el-table-column prop="id" label="ID" width="60"/>
                     <el-table-column prop="type" label="题型" width="100"><template #default="{row}">{{TYPE_MAP[row.type]}}</template></el-table-column>
-                    <el-table-column prop="content" label="题干" show-overflow-tooltip/>
+                    <el-table-column prop="content" label="题干" show-overflow-tooltip><template #default="{row}">{{stripHtml(row.content)}}</template></el-table-column>
                     <el-table-column label="分值" width="150"><template #default="{row}"><el-input-number v-model="row.pickScore" :min="1" :max="100" size="small" style="width:110px" controls-position="right"/></template></el-table-column>
                     <el-table-column label="操作" width="80"><template #default="{row}"><el-button size="small" type="danger" link @click="removeSelected(row)">移除</el-button></template></el-table-column>
                 </el-table>
@@ -1102,7 +1245,7 @@ const StudentHomeworks = defineComponent({
                 <p style="color:#909399;margin-bottom:12px">截止时间: {{formatD(currentHw?.deadline)}} | 总分: {{currentHw?.totalScore}}</p>
                 <el-divider/>
                 <div v-for="(q,i) in questions" :key="i" style="margin-bottom:20px;padding:12px;background:#fafafa;border-radius:6px">
-                    <p style="font-weight:bold;margin-bottom:8px">{{i+1}}. {{q.content}} <el-tag size="small">{{TYPE_MAP[q.type]}}</el-tag> <span style="color:#E6A23C">({{q.score}}分)</span></p>
+                    <p style="font-weight:bold;margin-bottom:8px">{{i+1}}. <span class="q-content" v-html="safeHtml(q.content)"></span> <el-tag size="small">{{TYPE_MAP[q.type]}}</el-tag> <span style="color:#E6A23C">({{q.score}}分)</span></p>
                     <!-- 选择题 -->
                     <template v-if="q.type==='SINGLE_CHOICE'">
                         <el-radio-group v-model="answers[i]" class="opt-group">
@@ -1121,8 +1264,8 @@ const StudentHomeworks = defineComponent({
                             <el-radio value="错">错</el-radio>
                         </el-radio-group>
                     </template>
-                    <!-- 问答题 -->
-                    <template v-if="q.type==='ESSAY'">
+                    <!-- 主观题（问答题/应用题） -->
+                    <template v-if="isSubjective(q.type)">
                         <el-input v-model="answers[i]" type="textarea" :rows="4" placeholder="请输入你的答案..."/>
                     </template>
                 </div>
@@ -1155,6 +1298,9 @@ const StudentHomeworks = defineComponent({
         const openHw = async row => {
             viewingHw.value = true; viewingResult.value = false; currentHw.value = row
             try { const r = await api.studentHomeworkDetail(row.id); questions.value = r.data.data.questions||[]; answers.value = new Array(questions.value.length).fill('') } catch(e) { $m('加载失败','error') }
+            // 题干富文本渲染（v-html 注入后扫描 ECharts 图表/代码高亮）
+            await nextTick()
+            document.querySelectorAll('.q-content').forEach(renderRich)
         }
         const viewResult = async row => {
             viewingResult.value = true; viewingHw.value = false; currentHw.value = row

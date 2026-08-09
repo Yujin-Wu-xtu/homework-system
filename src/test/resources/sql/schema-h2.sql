@@ -153,6 +153,17 @@ CREATE TABLE IF NOT EXISTS ai_material (
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 题干图片表（应用题富文本插图）
+CREATE TABLE IF NOT EXISTS question_image (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    file_name VARCHAR(200) NOT NULL,
+    file_path VARCHAR(500) NOT NULL,
+    file_size BIGINT NOT NULL,
+    file_type VARCHAR(20) NOT NULL,
+    uploader_id BIGINT NOT NULL,
+    create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- 邮箱注册验证码表
 CREATE TABLE IF NOT EXISTS verification_code (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

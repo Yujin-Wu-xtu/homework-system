@@ -37,6 +37,7 @@ public class AdminController {
     private final HomeworkQuestionDao homeworkQuestionDao;
     private final QuestionAiService questionAiService;
     private final AiMaterialDao aiMaterialDao;
+    private final QuestionImageDao questionImageDao;
 
     // ---- 首页统计 ----
     @GetMapping("/dashboard")
@@ -258,7 +259,11 @@ public class AdminController {
         if (kpNums != null) {
             kpIds = kpNums.stream().map(Number::longValue).toList();
         }
-        return R.ok().data(questionService.addQuestion(q, options, kpIds));
+        try {
+            return R.ok().data(questionService.addQuestion(q, options, kpIds));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
     }
 
     @PutMapping("/questions/{id}")
@@ -404,6 +409,80 @@ public class AdminController {
         } catch (Exception ignored) {
         }
         aiMaterialDao.deleteById(id);
+        return R.ok("已删除");
+    }
+
+    // ---- 题干图片（应用题富文本插图：上传后返回 URL 供编辑器插入 <img src>）----
+    private static final String QUESTION_IMAGE_DIR =
+            System.getProperty("user.dir") + java.io.File.separator + "data" + java.io.File.separator
+                    + "question-images" + java.io.File.separator;
+
+    @PostMapping("/question-images")
+    public R uploadQuestionImage(@RequestParam("file") MultipartFile file,
+                                 @RequestAttribute("userId") Long userId) {
+        try {
+            String name = file.getOriginalFilename() == null ? "unnamed.png" : file.getOriginalFilename();
+            String lower = name.toLowerCase();
+            String type;
+            if (lower.endsWith(".png")) type = "png";
+            else if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) type = "jpg";
+            else if (lower.endsWith(".gif")) type = "gif";
+            else if (lower.endsWith(".webp")) type = "webp";
+            else throw new RuntimeException("不支持的图片类型: " + name + "（支持 png/jpg/jpeg/gif/webp）");
+
+            // 存储：data/question-images/<uuid>.<ext>，避免中文名/重名；浏览器经 /question-images/xxx 访问
+            String ext = lower.substring(lower.lastIndexOf('.'));
+            String storedName = java.util.UUID.randomUUID().toString().replace("-", "") + ext;
+            java.io.File dir = new java.io.File(QUESTION_IMAGE_DIR);
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw new RuntimeException("图片目录创建失败");
+            }
+            java.io.File target = new java.io.File(dir, storedName);
+            file.transferTo(target);
+
+            QuestionImage img = new QuestionImage();
+            img.setFileName(name);
+            img.setFilePath("data/question-images/" + storedName);
+            img.setFileSize(file.getSize());
+            img.setFileType(type);
+            img.setUploaderId(userId);
+            questionImageDao.insert(img);
+            return R.ok("上传成功").data(Map.of(
+                    "id", img.getId(),
+                    "fileName", name,
+                    "url", "/question-images/" + storedName));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        } catch (Exception e) {
+            return R.badRequest("上传失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/question-images")
+    public R listQuestionImages() {
+        return R.ok().data(questionImageDao.selectList(
+                new LambdaQueryWrapper<QuestionImage>().orderByDesc(QuestionImage::getCreateTime)));
+    }
+
+    @DeleteMapping("/question-images/{id}")
+    public R deleteQuestionImage(@PathVariable Long id) {
+        QuestionImage img = questionImageDao.selectById(id);
+        if (img == null) return R.badRequest("图片不存在");
+        // 被题目题干引用时拒绝删除（防止题干图片裂图）
+        String storedName = img.getFilePath().substring(img.getFilePath().lastIndexOf('/') + 1);
+        Long refCount = questionDao.selectCount(
+                new LambdaQueryWrapper<Question>().like(Question::getContent, "/question-images/" + storedName));
+        if (refCount != null && refCount > 0) {
+            return R.badRequest("该图片正被 " + refCount + " 道题目引用，请先编辑题目移除图片");
+        }
+        try {
+            java.io.File f = new java.io.File(img.getFilePath()).getAbsoluteFile();
+            if (f.exists() && !f.delete()) {
+                // 文件删除失败不阻断（记录删除即可）
+            }
+        } catch (Exception ignored) {
+        }
+        questionImageDao.deleteById(id);
         return R.ok("已删除");
     }
 

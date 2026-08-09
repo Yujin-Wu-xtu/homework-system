@@ -20,6 +20,7 @@ class AdminControllerTest extends BaseControllerTest {
     private static Long testStudentId;
     private static Long testQuestionId;
     private static Long testKpId;
+    private static Long appQuestionId;
 
     private static final String T_TEACHER_USER = "TEST-T-01";
     private static final String T_STUDENT_USER = "TEST-S-01";
@@ -236,5 +237,38 @@ class AdminControllerTest extends BaseControllerTest {
 
         MvcResult del = delete("/api/admin/knowledge-points/" + testKpId, adminToken());
         assertOk(del);
+    }
+
+    // ========== 应用题（APPLICATION：富文本题干 + 参考答案，主观题链路）==========
+
+    @Test
+    @Order(18)
+    void testAddApplicationQuestion() throws Exception {
+        MvcResult r = postJson("/api/admin/questions", Map.of(
+                "type", "APPLICATION",
+                "content", "<p>某工厂各季度产量统计如下，请结合图表分析增长趋势</p><div class=\"q-chart\" data-chart='{\"series\":[{\"type\":\"bar\"}]}'>图表</div>",
+                "referenceAnswer", "产量逐季度上升，Q4 达到峰值",
+                "score", 10, "difficulty", "MEDIUM"), adminToken());
+        assertOk(r);
+        appQuestionId = body(r).path("data").path("id").asLong();
+        assertTrue(appQuestionId > 0);
+
+        MvcResult list = get("/api/admin/questions?page=1&size=100&type=APPLICATION", adminToken());
+        assertOk(list);
+        boolean found = false;
+        for (JsonNode n : body(list).path("data").path("records")) {
+            if (n.path("id").asLong() == appQuestionId) {
+                found = true;
+                assertTrue(n.path("content").asText().contains("<p>"), "应用题题干应保存富文本 HTML");
+            }
+        }
+        assertTrue(found, "应用题应出现在题库列表");
+    }
+
+    @Test
+    @Order(19)
+    void testDeleteApplicationQuestion() throws Exception {
+        MvcResult r = delete("/api/admin/questions/" + appQuestionId, adminToken());
+        assertOk(r);
     }
 }

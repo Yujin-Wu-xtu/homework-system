@@ -35,8 +35,8 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionDao, Question>
     @Transactional
     public Question addQuestion(Question question, List<QuestionOption> options,
                                 List<Long> knowledgePointIds) {
-        // 客观题必须有标准答案
-        if (!"ESSAY".equals(question.getType()) &&
+        // 客观题必须有标准答案（主观题：问答题/应用题不要求）
+        if (question.isObjective() &&
                 (question.getCorrectAnswer() == null || question.getCorrectAnswer().isBlank())) {
             throw new RuntimeException("客观题必须录入标准答案");
         }

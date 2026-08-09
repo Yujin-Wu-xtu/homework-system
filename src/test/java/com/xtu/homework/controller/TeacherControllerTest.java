@@ -286,6 +286,66 @@ class TeacherControllerTest extends BaseControllerTest {
         assertOk(r);
     }
 
+    /** 应用题闭环：布置含应用题的作业 → 学生提交（主观题不自动判分）→ 学生详情不泄露参考答案 → 教师评分 → 总分更新 */
+    @Test
+    @Order(21)
+    void testApplicationQuestionGradingFlow() throws Exception {
+        // 管理员建应用题（富文本题干）
+        MvcResult aq = postJson("/api/admin/questions", Map.of(
+                "type", "APPLICATION",
+                "content", "<p>结合下图数据分析销量变化趋势</p><div class=\"q-chart\" data-chart='{\"series\":[{\"type\":\"line\"}]}'>图表</div>",
+                "referenceAnswer", "销量整体上升，Q3 达到峰值",
+                "score", 10, "difficulty", "MEDIUM"), adminToken());
+        assertOk(aq);
+        long appQid = body(aq).path("data").path("id").asLong();
+
+        // 布置仅含应用题的作业
+        Map<String, Object> hw = new HashMap<>();
+        hw.put("title", "TEST-应用题作业");
+        hw.put("description", "");
+        hw.put("teachingClassId", TEACHING_CLASS_1);
+        hw.put("deadline", "2027-12-31T23:59:59");
+        hw.put("questions", List.of(Map.of("questionId", appQid, "sortOrder", 1, "score", 10)));
+        MvcResult r = postJson("/api/teacher/homeworks", hw, teacherToken());
+        assertOk(r);
+        long appHwId = body(r).path("data").path("id").asLong();
+
+        // 学生提交：应用题不自动判分（autoScore=0，answer.score 为 null）
+        MvcResult submit = postJson("/api/student/homeworks/" + appHwId + "/submit",
+                Map.of("answers", List.of(Map.of("questionId", appQid, "answer", "销量整体上升，Q3 达到峰值"))),
+                studentToken());
+        assertOk(submit);
+        assertEquals("SUBMITTED", body(submit).path("data").path("status").asText());
+        assertEquals(0, body(submit).path("data").path("autoScore").asInt(), "应用题不应自动判分");
+
+        // 学生端详情：富文本题干正常返回，但绝不泄露参考答案
+        MvcResult detail = get("/api/student/homeworks/" + appHwId, studentToken());
+        assertOk(detail);
+        assertFalse(detail.getResponse().getContentAsString().contains("\"referenceAnswer\""),
+                "学生端详情不得泄露参考答案");
+
+        // 教师评分（主观题链路）
+        MvcResult subs = get("/api/teacher/homeworks/" + appHwId + "/submissions", teacherToken());
+        long subId = 0;
+        for (JsonNode n : body(subs).path("data")) {
+            if (n.path("studentId").asLong() == STUDENT_ID) subId = n.path("submissionId").asLong();
+        }
+        assertTrue(subId > 0, "应找到学生提交记录");
+        MvcResult answers = get("/api/teacher/homeworks/" + appHwId + "/submissions/" + subId + "/answers", teacherToken());
+        assertOk(answers);
+        assertEquals("APPLICATION", body(answers).path("data").get(0).path("questionType").asText());
+        long answerId = body(answers).path("data").get(0).path("id").asLong();
+        MvcResult grade = putJson("/api/teacher/homeworks/" + appHwId + "/grading/" + answerId,
+                Map.of("score", 8, "comment", "分析合理"), teacherToken());
+        assertOk(grade);
+
+        // 评分后学生结果总分=8
+        MvcResult result = get("/api/student/homeworks/" + appHwId + "/result", studentToken());
+        assertOk(result);
+        assertEquals(8, body(result).path("data").path("submission").path("totalScore").asInt(),
+                "评分后总分应为 8");
+    }
+
     private Map<String, Object> homeworkBody(Long tcId, String title) {
         Map<String, Object> body = new HashMap<>();
         body.put("title", title);

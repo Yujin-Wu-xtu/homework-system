@@ -70,7 +70,7 @@ public class SubmissionServiceImpl extends ServiceImpl<SubmissionDao, Submission
             answer.setQuestionId(item.getQuestionId());
             answer.setStudentAnswer(item.getAnswer());
 
-            if (!"ESSAY".equals(q.getType()) && q.getCorrectAnswer() != null) {
+            if (q.isObjective() && q.getCorrectAnswer() != null) {
                 // 获取该题在本次作业中的分值
                 HomeworkQuestion hq = hwQuestionDao.selectOne(
                         new LambdaQueryWrapper<HomeworkQuestion>()
