@@ -49,11 +49,11 @@
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
             <version>${mybatis-plus.version}</version>
         </dependency>
-        <!-- H2 内嵌数据库（开发环境，无需安装） -->
+        <!-- H2 内存数据库（仅测试用：MockMvc/Service 测试的隔离内存库，生产/运行不打包） -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <scope>runtime</scope>
+            <scope>test</scope>
         </dependency>
         <!-- MySQL Driver（生产环境，可选） -->
         <dependency>

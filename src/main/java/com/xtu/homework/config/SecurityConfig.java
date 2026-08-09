@@ -39,7 +39,7 @@ public class SecurityConfig {
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .headers(headers -> headers
-                .frameOptions(frame -> frame.sameOrigin())  // H2控制台需要iframe
+                .frameOptions(frame -> frame.deny())  // 纯 MySQL 无 H2 控制台 iframe 需求，DENY 最严
                 // 安全响应头：X-Content-Type-Options: nosniff + Cache-Control 为 Spring Security 默认开启
                 // （显式只补充 Referrer-Policy，防外链泄露页面 URL）
                 .referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.SAME_ORIGIN)))
@@ -48,7 +48,6 @@ public class SecurityConfig {
                 .requestMatchers("/api/auth/login").permitAll()
                 .requestMatchers("/api/auth/register", "/api/auth/verification-code/**").permitAll()
                 .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
-                .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/teacher/**").hasRole("TEACHER")
                 .requestMatchers("/api/student/**").hasRole("STUDENT")

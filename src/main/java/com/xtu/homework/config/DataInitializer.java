@@ -13,7 +13,8 @@ import java.sql.Connection;
 
 /**
  * 数据库初始化器
- * - Schema: 按数据库类型选择 SQL 文件（MySQL → init.sql，H2 → schema-h2.sql），仅 DDL + 幂等初始账号
+ * - Schema: MySQL/MariaDB → init.sql（仅 DDL + 幂等初始账号）；非 MySQL 环境跳过
+ *   （测试用 H2 内存库由测试配置 spring.sql.init 建表灌数据，不依赖本类）
  * - Data: 使用 Java 硬编码插入（避免 Windows GBK 编码导致 SQL 文件中文乱码）
  * - 幂等：sys_user 已有数据时跳过 Java 数据初始化（MySQL 持久库重启不重复插入）
  */
@@ -41,7 +42,7 @@ public class DataInitializer implements CommandLineRunner {
         }
     }
 
-    /** 根据数据库类型选择 schema 文件：MySQL/MariaDB → init.sql；H2 → schema-h2.sql */
+    /** 运行环境只用 MySQL：返回 init.sql；非 MySQL（测试 H2）返回 null 跳过 schema 初始化 */
     private String resolveSchemaFile() {
         try (Connection conn = dataSource.getConnection()) {
             String driver = conn.getMetaData().getDriverName().toLowerCase();
@@ -50,7 +51,7 @@ public class DataInitializer implements CommandLineRunner {
             }
         } catch (Exception ignored) {
         }
-        return "sql/schema-h2.sql";
+        return null;
     }
 
     /** 幂等检查：是否已完成完整初始化（以初始学生数据为标志，而非仅 admin 账号） */
@@ -66,6 +67,10 @@ public class DataInitializer implements CommandLineRunner {
 
     private void initSchema() {
         String schemaFile = resolveSchemaFile();
+        if (schemaFile == null) {
+            // 非 MySQL 环境（测试 H2）：表由测试配置 spring.sql.init 建好，跳过
+            return;
+        }
         try (BufferedReader r = new BufferedReader(
                 new InputStreamReader(new ClassPathResource(schemaFile).getInputStream(),
                         StandardCharsets.UTF_8))) {
