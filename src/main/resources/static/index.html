@@ -446,15 +446,19 @@ const AdminQuestions = defineComponent({
                 </el-table-column>
             </el-table>
             <!-- 新增/编辑题目弹窗 -->
-            <el-dialog :title="isEdit?'编辑题目':'新增题目'" v-model="dialogVisible" width="880px" @closed="destroyEditor">
+            <el-dialog :title="isEdit?'编辑题目':'新增题目'" v-model="dialogVisible" width="880px" @opened="initEditor" @closed="destroyEditor">
                 <el-form :model="form" label-width="80px">
                     <el-form-item label="题型"><el-select v-model="form.type" style="width:100%" :disabled="isEdit"><el-option v-for="(v,k) in TYPE_MAP" :key="k" :label="v" :value="k"/></el-select></el-form-item>
                     <el-form-item label="题干">
-                        <div ref="toolbarBox" style="border:1px solid #dcdfe6;border-bottom:none;border-radius:4px 4px 0 0;z-index:2000"></div>
-                        <div ref="editorBox" style="border:1px solid #dcdfe6;border-radius:0 0 4px 4px;z-index:2000"></div>
-                        <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
-                            <el-button size="small" type="primary" plain @click="openChartDialog">📊 插入图表</el-button>
-                            <span style="color:#909399;font-size:12px">富文本编辑：支持图片 / 公式 / 代码块（应用题题干推荐使用）</span>
+                        <!-- 外层 width:100% 容器：el-form-item__content 是 flex 布局，直接放 div 会被压成内容宽度
+                             （wangeditor 在 20px 宽容器里初始化 → 编辑区宽度塌陷、placeholder 竖排），包一层解决 -->
+                        <div style="width:100%">
+                            <div ref="toolbarBox" style="position:relative;border:1px solid #dcdfe6;border-bottom:none;border-radius:4px 4px 0 0;z-index:2100"></div>
+                            <div ref="editorBox" style="position:relative;height:240px;border:1px solid #dcdfe6;border-radius:0 0 4px 4px;z-index:2100"></div>
+                            <div style="margin-top:6px;display:flex;align-items:center;gap:8px">
+                                <el-button size="small" type="primary" plain @click="openChartDialog">📊 插入图表</el-button>
+                                <span style="color:#909399;font-size:12px">富文本编辑：支持图片 / 公式 / 代码块（应用题题干推荐使用）</span>
+                            </div>
                         </div>
                     </el-form-item>
                     <el-form-item label="标准答案" v-if="isObjective(form.type)"><el-input v-model="form.correctAnswer" placeholder="单选题填选项字母如C，多选填ACD，判断填对/错"/></el-form-item>
@@ -654,16 +658,15 @@ const AdminQuestions = defineComponent({
             chartVisible.value = false
         }
         // ========== 新增/编辑 ==========
+        // 编辑器初始化由 el-dialog @opened 事件触发（动画结束后，比 nextTick+setTimeout 可靠）
         const showAdd = () => {
             Object.assign(form, {id:null,type:'SINGLE_CHOICE',content:'',correctAnswer:'',referenceAnswer:'',difficulty:'MEDIUM',score:5,options:[],knowledgePointIds:[]})
             isEdit.value = false; dialogVisible.value = true
-            nextTick(() => setTimeout(initEditor, 150))  // 等 dialog 渲染完成（含动画）
         }
         const edit = async row => {
             Object.assign(form, {id:row.id,type:row.type,content:row.content,correctAnswer:row.correctAnswer||'',referenceAnswer:row.referenceAnswer||'',difficulty:row.difficulty,score:Number(row.score)||5,options:[],knowledgePointIds:[]})
             isEdit.value = true; dialogVisible.value = true
             try { const [or, kr] = await Promise.all([api.questionOptions(row.id), api.questionKps(row.id)]); form.options = or.data.data || []; form.knowledgePointIds = kr.data.data || [] } catch(e) { console.error(e) }
-            nextTick(() => setTimeout(initEditor, 150))
         }
         const save = async () => {
             if (editor) form.content = editor.getHtml()  // 同步富文本编辑器内容
@@ -779,7 +782,7 @@ const AdminQuestions = defineComponent({
         }
         onMounted(async () => { load(); try { const r = await api.knowledgePoints(); kpList.value = r.data.data } catch(e) { console.error(e) } })
         return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, load, toggle, del, showAdd, edit, save, uploadQuestions,
-            editorBox, toolbarBox, destroyEditor, chartVisible, chartForm, chartPreview, openChartDialog, insertChart,
+            editorBox, toolbarBox, initEditor, destroyEditor, chartVisible, chartForm, chartPreview, openChartDialog, insertChart,
             isObjective, isSubjective, stripHtml,
             aiVisible, aiType, aiCount, aiDifficulty, aiMaterial, aiDrafts, aiLoading, aiImporting, aiChecked, aiCheckAll, aiEditVisible, aiEditForm, materials, aiMaterialId, openAi, aiRun, materialUpload, materialDelete, aiEdit, aiImport }
     }
