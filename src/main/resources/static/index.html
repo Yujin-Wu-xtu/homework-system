@@ -22,6 +22,13 @@
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:'Microsoft YaHei',sans-serif;background:#f5f7fa}
+        /* wangeditor 工具栏下拉面板定位加固：面板 absolute 挂载在 .w-e-bar-item 内，
+           默认依赖祖先定位（toolbarBox relative），祖先链变动会错位 → 强制 bar-item 为定位祖先，
+           面板 top:100% 紧贴按钮下方 4px，消除滚动容器/层叠上下文干扰 */
+        .w-e-toolbar .w-e-bar-item{position:relative}
+        .w-e-select-list{top:100% !important;left:0 !important;margin-top:4px !important;max-height:280px}
+        /* 题干富文本容器内的图片自适应（wangeditor 插入的 img style 会被清空，防大图溢出） */
+        .q-content img{max-width:100%;height:auto}
         .login-container{display:flex;justify-content:center;align-items:center;min-height:100vh;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)}
         .login-card{width:420px;padding:40px;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
         .login-card h1{text-align:center;margin-bottom:30px;color:#303133;font-size:24px}
@@ -490,6 +497,7 @@ const AdminQuestions = defineComponent({
                     <el-form-item label="标题"><el-input v-model="chartForm.title" placeholder="图表标题（可空）"/></el-form-item>
                     <el-form-item label="数据"><el-input v-model="chartForm.dataText" type="textarea" :rows="6" placeholder="每行一个数据项：名称,数值&#10;例：&#10;周一,120&#10;周二,200&#10;周三,150"/></el-form-item>
                     <el-form-item label="预览"><div ref="chartPreview" style="width:100%;height:220px;border:1px dashed #dcdfe6;border-radius:4px"></div></el-form-item>
+                    <el-form-item><span style="color:#909399;font-size:12px">💡 插入后图表将渲染为静态图片存入题干，学生端直接查看（无需额外加载）</span></el-form-item>
                 </el-form>
                 <template #footer><el-button @click="chartVisible=false">取消</el-button><el-button type="primary" @click="insertChart">插入图表</el-button></template>
             </el-dialog>
@@ -649,13 +657,24 @@ const AdminQuestions = defineComponent({
         }
         watch(chartForm, () => renderChartPreview(), { deep: true })
         const openChartDialog = () => { chartVisible.value = true; nextTick(() => setTimeout(renderChartPreview, 100)) }
-        const insertChart = () => {
+        const insertChart = async () => {
             const opt = buildChartOption()
             if (!opt.series || !opt.series[0].data || !opt.series[0].data.length) { $m('请填写至少一行数据（名称,数值）', 'error'); return }
             if (!editor) return
-            const json = JSON.stringify(opt).replace(/&/g, '&amp;').replace(/'/g, '&#39;')
-            editor.dangerouslyInsertHtml(`<div class="q-chart" style="width:100%;height:300px" data-chart='${json}'>图表加载中...</div>`)
-            chartVisible.value = false
+            // wangeditor 不保留自定义 div（.q-chart 插入会被过滤）→ 图表渲染成图片上传，插入 <img>（编辑器与学生端都可靠）
+            if (!chartPreviewIns) { $m('图表渲染失败，请稍后再试', 'error'); return }
+            try {
+                const dataUrl = chartPreviewIns.getDataURL({ pixelRatio: 2, backgroundColor: '#fff' })
+                const blob = await (await fetch(dataUrl)).blob()
+                const file = new File([blob], 'chart-' + Date.now() + '.png', { type: 'image/png' })
+                const r = await api.uploadQuestionImage(file)
+                if (r.data.code !== 200) { $m(r.data.msg || '图片上传失败', 'error'); return }
+                // 关键：工具栏下拉/弹窗交互会清空编辑器 selection，selection 为 null 时 dangerouslyInsertHtml 静默跳过（源码逻辑）——先聚焦恢复选区
+                editor.focus()
+                editor.dangerouslyInsertHtml(`<img src="${r.data.data.url}" style="max-width:100%"/>`)
+                $m('图表已插入（已渲染为图片）')
+                chartVisible.value = false
+            } catch(e) { $m('图表插入失败', 'error') }
         }
         // ========== 新增/编辑 ==========
         // 编辑器初始化由 el-dialog @opened 事件触发（动画结束后，比 nextTick+setTimeout 可靠）
@@ -682,7 +701,14 @@ const AdminQuestions = defineComponent({
                     const dups = dup.data.data || []
                     const proceed = dups.length === 0 ? Promise.resolve()
                         : $c(`检测到 ${dups.length} 道相似题目（ID: ${dups.map(x=>x.id).join(', ')}），是否仍要保存？`, '题目查重提示')
-                    proceed.then(async () => { await api.addQuestion(d); dialogVisible.value = false; load(); $m('新增成功') }).catch(()=>{})
+                    proceed.then(async () => {
+                        await api.addQuestion(d)
+                        dialogVisible.value = false; load(); $m('新增成功')
+                    }).catch(e => {
+                        // 用户取消查重确认框（$c reject 'cancel'/'close'）静默；保存失败必须提示（原空 catch 吞异常导致无提示不关弹窗）
+                        if (!e || e === 'cancel' || e === 'close') return
+                        $m(e.response?.data?.msg || '保存失败', 'error')
+                    })
                 }
             } catch(e) { $m(e.response?.data?.msg||'失败','error') }
         }
