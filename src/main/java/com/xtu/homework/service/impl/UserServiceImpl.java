@@ -197,6 +197,13 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
 
     @Override
     public User addTeacher(User teacher) {
+        if (teacher.getUsername() == null || teacher.getUsername().isBlank()) {
+            throw new RuntimeException("工号不能为空");
+        }
+        // 工号唯一性预查重（DB 有 UNIQUE 约束，预查重给出明确 400 而非数据库异常）
+        User exist = userDao.selectOne(
+                new LambdaQueryWrapper<User>().eq(User::getUsername, teacher.getUsername()));
+        if (exist != null) throw new RuntimeException("工号 " + teacher.getUsername() + " 已存在");
         teacher.setRole("TEACHER");
         teacher.setPassword(passwordEncoder.encode(DEFAULT_PASSWORD));
         teacher.setPwdResetRequired(true);

@@ -223,6 +223,11 @@ public class TeacherController {
     public R assignHomework(@RequestAttribute("userId") Long teacherId,
                             @Valid @RequestBody HomeworkAssignDto dto) {
         try {
+            // 教学班归属校验：教师只能向自己的教学班布置作业（防越权）
+            TeachingClass tc = teachingClassDao.selectById(dto.getTeachingClassId());
+            if (tc == null || !tc.getTeacherId().equals(teacherId)) {
+                return R.badRequest("教学班不存在或无权操作");
+            }
             return R.ok().data(homeworkService.assignHomework(teacherId, dto));
         } catch (RuntimeException e) {
             return R.badRequest(e.getMessage());
@@ -231,13 +236,21 @@ public class TeacherController {
 
     @PutMapping("/homeworks/{id}")
     public R updateHomework(@PathVariable Long id,
+                            @RequestAttribute("userId") Long teacherId,
                             @Valid @RequestBody HomeworkAssignDto dto) {
-        return R.ok().data(homeworkService.updateHomework(id, dto));
+        try {
+            requireOwnHomework(id, teacherId);
+            return R.ok().data(homeworkService.updateHomework(id, dto));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
     }
 
     @DeleteMapping("/homeworks/{id}")
-    public R deleteHomework(@PathVariable Long id) {
+    public R deleteHomework(@PathVariable Long id,
+                            @RequestAttribute("userId") Long teacherId) {
         try {
+            requireOwnHomework(id, teacherId);
             homeworkService.deleteHomework(id);
             return R.ok();
         } catch (RuntimeException e) {
@@ -246,9 +259,14 @@ public class TeacherController {
     }
 
     @GetMapping("/homeworks/{id}/detail")
-    public R getHomeworkDetail(@PathVariable Long id) {
-        Homework hw = homeworkDao.selectById(id);
-        if (hw == null) return R.badRequest("作业不存在");
+    public R getHomeworkDetail(@PathVariable Long id,
+                               @RequestAttribute("userId") Long teacherId) {
+        Homework hw;
+        try {
+            hw = requireOwnHomework(id, teacherId);
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
 
         List<HomeworkQuestion> hqList = homeworkQuestionDao.selectList(
                 new LambdaQueryWrapper<HomeworkQuestion>()
@@ -269,7 +287,13 @@ public class TeacherController {
     }
 
     @GetMapping("/homeworks/{id}/submissions")
-    public R getSubmissions(@PathVariable Long id) {
+    public R getSubmissions(@PathVariable Long id,
+                            @RequestAttribute("userId") Long teacherId) {
+        try {
+            requireOwnHomework(id, teacherId);
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
         List<Map<String, Object>> status = homeworkService.getSubmissionStatus(id);
 
         // 为每个学生附加答案详情
@@ -291,7 +315,19 @@ public class TeacherController {
     }
 
     @GetMapping("/homeworks/{id}/submissions/{subId}/answers")
-    public R getSubmissionAnswers(@PathVariable Long subId) {
+    public R getSubmissionAnswers(@PathVariable Long id,
+                                  @PathVariable Long subId,
+                                  @RequestAttribute("userId") Long teacherId) {
+        try {
+            requireOwnHomework(id, teacherId);
+            // subId 必须属于该作业（防通过他人作业的 subId 越权查看答案）
+            Submission sub = submissionDao.selectById(subId);
+            if (sub == null || !sub.getHomeworkId().equals(id)) {
+                return R.badRequest("提交记录不存在");
+            }
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
         List<SubmissionAnswer> answers = submissionAnswerDao.selectList(
                 new LambdaQueryWrapper<SubmissionAnswer>()
                         .eq(SubmissionAnswer::getSubmissionId, subId));
@@ -305,27 +341,59 @@ public class TeacherController {
 
     @GetMapping("/homeworks/{id}/grading")
     public R getGradingList(@PathVariable Long id,
+                            @RequestAttribute("userId") Long teacherId,
                             @RequestParam(defaultValue = "1") int page,
                             @RequestParam(defaultValue = "10") int size,
                             @RequestParam(required = false) String status) {
+        try {
+            requireOwnHomework(id, teacherId);
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
         // status: ALL(默认)/UNGRADED(仅待批改)/GRADED(已批改) —— 需求"从指定位置开始评分/过滤"
         return R.ok().data(submissionService.getGradingPage(id, page, size, status));
     }
 
     @PutMapping("/homeworks/{hwId}/grading/{answerId}")
-    public R gradeAnswer(@PathVariable Long answerId,
+    public R gradeAnswer(@PathVariable Long hwId,
+                         @PathVariable Long answerId,
                          @RequestAttribute("userId") Long teacherId,
                          @Valid @RequestBody GradingDto dto) {
-        submissionService.gradeAnswer(answerId, teacherId, dto.getScore(), dto.getComment());
-        return R.ok("评分已保存");
+        try {
+            requireOwnHomework(hwId, teacherId);
+            submissionService.gradeAnswer(answerId, teacherId, dto.getScore(), dto.getComment());
+            return R.ok("评分已保存");
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
     }
 
     @GetMapping("/homeworks/{id}/export")
-    public ResponseEntity<byte[]> exportGrades(@PathVariable Long id) {
+    public ResponseEntity<byte[]> exportGrades(@PathVariable Long id,
+                                               @RequestAttribute("userId") Long teacherId) {
+        try {
+            requireOwnHomework(id, teacherId);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest()
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(("{\"code\":400,\"msg\":\"" + e.getMessage() + "\"}").getBytes());
+        }
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=grades.xlsx")
                 .contentType(MediaType.APPLICATION_OCTET_STREAM)
                 .body(homeworkService.exportGrades(id));
+    }
+
+    /**
+     * 作业归属校验：教师只能查看/修改/删除自己布置的作业（防越权 IDOR）。
+     * 不通过时抛 RuntimeException，由调用方转为 R.badRequest。
+     */
+    private Homework requireOwnHomework(Long homeworkId, Long teacherId) {
+        Homework hw = homeworkDao.selectById(homeworkId);
+        if (hw == null || !hw.getTeacherId().equals(teacherId)) {
+            throw new RuntimeException("作业不存在或无权操作");
+        }
+        return hw;
     }
 
     // ---- 题库查询 ----

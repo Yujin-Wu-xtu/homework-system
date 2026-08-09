@@ -73,7 +73,11 @@ public class AdminController {
 
     @PostMapping("/teachers")
     public R addTeacher(@RequestBody User teacher) {
-        return R.ok().data(userService.addTeacher(teacher));
+        try {
+            return R.ok().data(userService.addTeacher(teacher));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
     }
 
     @PutMapping("/teachers/{id}")

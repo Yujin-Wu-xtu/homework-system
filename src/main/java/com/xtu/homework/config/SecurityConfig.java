@@ -1,10 +1,13 @@
 package com.xtu.homework.config;
 
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer.ReferrerPolicyConfig;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -36,7 +39,10 @@ public class SecurityConfig {
             .sessionManagement(session ->
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .headers(headers -> headers
-                .frameOptions(frame -> frame.sameOrigin()))  // H2控制台需要iframe
+                .frameOptions(frame -> frame.sameOrigin())  // H2控制台需要iframe
+                // 安全响应头：X-Content-Type-Options: nosniff + Cache-Control 为 Spring Security 默认开启
+                // （显式只补充 Referrer-Policy，防外链泄露页面 URL）
+                .referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.SAME_ORIGIN)))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/", "/index.html", "/favicon.ico").permitAll()
                 .requestMatchers("/api/auth/login").permitAll()
@@ -51,6 +57,18 @@ public class SecurityConfig {
                 .requestMatchers("/{path:^(?!api).*$}", "/{path:^(?!api).*$}/**").permitAll()
                 .anyRequest().authenticated()
             )
+            .exceptionHandling(eh -> eh
+                // 未认证（无/无效 token）→ 401；已认证但角色不足 → 403。统一 R 格式响应体
+                .authenticationEntryPoint((req, res, e) -> {
+                    res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    res.setContentType("application/json;charset=UTF-8");
+                    res.getWriter().write("{\"code\":401,\"msg\":\"未登录或登录已过期\"}");
+                })
+                .accessDeniedHandler((req, res, e) -> {
+                    res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    res.setContentType("application/json;charset=UTF-8");
+                    res.getWriter().write("{\"code\":403,\"msg\":\"无权限访问\"}");
+                }))
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
