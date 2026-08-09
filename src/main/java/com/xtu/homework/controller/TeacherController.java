@@ -62,10 +62,15 @@ public class TeacherController {
     public R listTeachingClasses(@RequestAttribute("userId") Long teacherId,
                                  @RequestParam(defaultValue = "1") int page,
                                  @RequestParam(defaultValue = "10") int size) {
-        return R.ok().data(teachingClassDao.selectPage(new Page<>(page, size),
+        Page<TeachingClass> result = teachingClassDao.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<TeachingClass>()
                         .eq(TeachingClass::getTeacherId, teacherId)
-                        .orderByDesc(TeachingClass::getCreateTime)));
+                        .orderByDesc(TeachingClass::getCreateTime));
+        // 附加学生人数（动态计算），供前端"布置作业"过滤空教学班
+        for (TeachingClass tc : result.getRecords()) {
+            tc.setStudentCount((int) userDao.countStudentsByTeachingClassId(tc.getId()));
+        }
+        return R.ok().data(result);
     }
 
     @PostMapping("/teaching-classes")

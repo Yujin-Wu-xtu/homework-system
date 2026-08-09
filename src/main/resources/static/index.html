@@ -930,7 +930,9 @@ const TeacherAssign = defineComponent({
             <el-form :model="form" label-width="100px" style="max-width:700px">
                 <el-form-item label="作业名称"><el-input v-model="form.title" placeholder="如：第一章课后作业"/></el-form-item>
                 <el-form-item label="作业描述"><el-input v-model="form.description" type="textarea" :rows="2"/></el-form-item>
-                <el-form-item label="教学班级"><el-select v-model="form.teachingClassId" placeholder="选择教学班级" style="width:100%"><el-option v-for="tc in tcList" :key="tc.id" :label="tc.name" :value="tc.id"/></el-select></el-form-item>
+                <el-form-item label="教学班级"><el-select v-model="form.teachingClassId" placeholder="选择教学班级（仅显示有学生的教学班）" style="width:100%"><el-option v-for="tc in availableTcList" :key="tc.id" :label="tc.name + '（' + (tc.studentCount||0) + '人）'" :value="tc.id"/></el-select>
+                    <p v-if="!availableTcList.length" style="color:#E6A23C;font-size:12px;line-height:1.6">暂无可用教学班 —— 作业只能发布到包含学生的教学班。请先在「教学班管理」中将自然班级拉入教学班。</p>
+                </el-form-item>
                 <el-form-item label="截止时间"><el-date-picker v-model="form.deadline" type="datetime" placeholder="选择截止时间" style="width:100%" value-format="YYYY-MM-DDTHH:mm:ss"/></el-form-item>
                 <el-form-item label="选择题目">
                     <div style="margin-bottom:8px">
@@ -947,23 +949,49 @@ const TeacherAssign = defineComponent({
                     </el-table>
                 </el-form-item>
                 <el-form-item label="已选题目">
-                    <el-tag v-for="(q,i) in selected" :key="i" closable @close="selected.splice(i,1)" style="margin:2px">
-                        #{{q.id}} {{TYPE_MAP[q.type]}} — {{(q.content||'').substring(0,30)}}...
-                        <el-input-number v-model="q.pickScore" :min="1" :max="100" size="small" style="width:80px;margin-left:4px" controls-position="right"/>
-                    </el-tag>
-                    <p v-if="!selected.length" style="color:#909399">请在题目列表中勾选</p>
+                    <div v-if="selected.length" style="display:flex;align-items:center;gap:8px">
+                        <el-tag type="info" size="small">已选 {{selected.length}} 题</el-tag>
+                        <el-tag type="warning" size="small">总分 {{totalScore}} 分</el-tag>
+                        <el-button size="small" type="primary" link @click="selVisible = true">管理已选题目</el-button>
+                    </div>
+                    <p v-else style="color:#909399">请在题目列表中勾选</p>
                 </el-form-item>
                 <el-form-item>
                     <el-button type="primary" @click="submit" :loading="submitting">布置作业</el-button>
                     <el-button @click="reset">重置</el-button>
                 </el-form-item>
             </el-form>
+            <el-dialog title="已选题目管理" v-model="selVisible" width="820px">
+                <el-table :data="selected" border stripe max-height="420">
+                    <el-table-column type="index" label="#" width="50"/>
+                    <el-table-column prop="id" label="ID" width="60"/>
+                    <el-table-column prop="type" label="题型" width="100"><template #default="{row}">{{TYPE_MAP[row.type]}}</template></el-table-column>
+                    <el-table-column prop="content" label="题干" show-overflow-tooltip/>
+                    <el-table-column label="分值" width="150"><template #default="{row}"><el-input-number v-model="row.pickScore" :min="1" :max="100" size="small" style="width:110px" controls-position="right"/></template></el-table-column>
+                    <el-table-column label="操作" width="80"><template #default="{row}"><el-button size="small" type="danger" link @click="removeSelected(row)">移除</el-button></template></el-table-column>
+                </el-table>
+            </el-dialog>
         </div>`,
     setup(props, {emit}) {
         const form = reactive({title:'',description:'',teachingClassId:null,deadline:''})
-        const tcList = ref([]), questions = ref([]), selected = ref([]), qKeyword = ref(''), qType = ref(''), submitting = ref(false)
+        const tcList = ref([]), questions = ref([]), selected = ref([]), qKeyword = ref(''), qType = ref(''), submitting = ref(false), selVisible = ref(false)
+        const availableTcList = computed(() => tcList.value.filter(tc => (tc.studentCount || 0) > 0))
+        const totalScore = computed(() => selected.value.reduce((a, q) => a + (Number(q.pickScore) || 0), 0))
         const searchQuestions = async () => { try { const r = await api.searchQuestions({page:1,size:100,keyword:qKeyword.value,type:qType.value}); questions.value = r.data.data.records } catch(e) { console.error(e) } }
-        const onSelect = sel => { selected.value = sel.map(q => ({...q, pickScore: q.score||5})) }
+        const onSelect = sel => {
+            // 勾选变化全量重建，但保留已在弹窗内调整过的分值（pickScore）
+            selected.value = sel.map(q => {
+                const exist = selected.value.find(s => s.id === q.id)
+                return {...q, pickScore: exist ? exist.pickScore : (q.score||5)}
+            })
+        }
+        // 弹窗内移除：同时取消主表勾选（toggleRowSelection 触发 selection-change → onSelect 重建）
+        const removeSelected = q => {
+            const idx = selected.value.indexOf(q)
+            if (idx > -1) selected.value.splice(idx, 1)
+            qTable.value.toggleRowSelection(q, false)
+            if (!selected.value.length) selVisible.value = false
+        }
         const submit = async () => {
             if (!form.title||!form.teachingClassId||!form.deadline||!selected.value.length) { $m('请填写完整信息','error'); return }
             submitting.value = true
@@ -973,9 +1001,9 @@ const TeacherAssign = defineComponent({
                 await api.assignHomework(d); $m('布置成功'); reset(); emit('assigned')
             } catch(e) { $m(e.response?.data?.msg||'布置失败','error') } finally { submitting.value = false }
         }
-        const reset = () => { Object.assign(form, {title:'',description:'',teachingClassId:null,deadline:''}); selected.value = []; questions.value = [] }
+        const reset = () => { Object.assign(form, {title:'',description:'',teachingClassId:null,deadline:''}); selected.value = []; questions.value = []; selVisible.value = false }
         onMounted(async () => { try { const r = await api.teacherTeachingClasses({page:1,size:50}); tcList.value = r.data.data.records } catch(e) { console.error(e) } })
-        return { form, tcList, questions, selected, qKeyword, qType, submitting, searchQuestions, onSelect, submit, reset, TYPE_MAP, DIFF_MAP }
+        return { form, tcList, availableTcList, totalScore, questions, selected, qKeyword, qType, submitting, selVisible, searchQuestions, onSelect, removeSelected, submit, reset, TYPE_MAP, DIFF_MAP }
     }
 })
 

@@ -246,6 +246,32 @@ class TeacherControllerTest extends BaseControllerTest {
 
     @Test
     @Order(18)
+    void testTeachingClassListIncludesStudentCount() throws Exception {
+        // 布置作业下拉的数据源：教学班列表必须带学生人数，空教学班 studentCount=0（前端据此过滤）
+        MvcResult r = get("/api/teacher/teaching-classes?page=1&size=50", teacherToken());
+        assertOk(r);
+        JsonNode records = body(r).path("data").path("records");
+        boolean foundTc1 = false, foundEmpty = false, foundTestTc = false;
+        for (JsonNode n : records) {
+            long id = n.path("id").asLong();
+            if (id == TEACHING_CLASS_1) {
+                foundTc1 = true;
+                assertTrue(n.path("studentCount").asInt() >= 6, "初始教学班1应含至少 6 名学生");
+            }
+            if (id == testTcId) {
+                foundTestTc = true;
+                assertTrue(n.path("studentCount").asInt() >= 3, "已拉入自然班1的教学班应含 3 名学生");
+            }
+            if (id == emptyTcId) {
+                foundEmpty = true;
+                assertEquals(0, n.path("studentCount").asInt(), "空教学班 studentCount 应为 0");
+            }
+        }
+        assertTrue(foundTc1 && foundEmpty && foundTestTc, "列表中应包含初始教学班/测试教学班/空教学班");
+    }
+
+    @Test
+    @Order(19)
     void testDeleteOwnHomework() throws Exception {
         // 已有学生提交 → 删除被拒绝（保护逻辑）
         MvcResult r = delete("/api/teacher/homeworks/" + homeworkId, teacherToken());
@@ -254,7 +280,7 @@ class TeacherControllerTest extends BaseControllerTest {
     }
 
     @Test
-    @Order(19)
+    @Order(20)
     void testDeleteTeachingClass() throws Exception {
         MvcResult r = delete("/api/teacher/teaching-classes/" + emptyTcId, teacherToken());
         assertOk(r);
