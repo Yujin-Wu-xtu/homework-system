@@ -780,6 +780,7 @@ const AdminQuestions = defineComponent({
         onMounted(async () => { load(); try { const r = await api.knowledgePoints(); kpList.value = r.data.data } catch(e) { console.error(e) } })
         return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, load, toggle, del, showAdd, edit, save, uploadQuestions,
             editorBox, toolbarBox, destroyEditor, chartVisible, chartForm, chartPreview, openChartDialog, insertChart,
+            isObjective, isSubjective, stripHtml,
             aiVisible, aiType, aiCount, aiDifficulty, aiMaterial, aiDrafts, aiLoading, aiImporting, aiChecked, aiCheckAll, aiEditVisible, aiEditForm, materials, aiMaterialId, openAi, aiRun, materialUpload, materialDelete, aiEdit, aiImport }
     }
 })
@@ -1146,7 +1147,7 @@ const TeacherAssign = defineComponent({
         }
         const reset = () => { Object.assign(form, {title:'',description:'',teachingClassId:null,deadline:''}); selected.value = []; questions.value = []; selVisible.value = false }
         onMounted(async () => { try { const r = await api.teacherTeachingClasses({page:1,size:50}); tcList.value = r.data.data.records } catch(e) { console.error(e) } })
-        return { form, tcList, availableTcList, totalScore, questions, selected, qKeyword, qType, submitting, selVisible, searchQuestions, onSelect, removeSelected, submit, reset, TYPE_MAP, DIFF_MAP }
+        return { form, tcList, availableTcList, totalScore, questions, selected, qKeyword, qType, submitting, selVisible, searchQuestions, onSelect, removeSelected, submit, reset, TYPE_MAP, DIFF_MAP, stripHtml }
     }
 })
 
@@ -1209,7 +1210,7 @@ const TeacherGrading = defineComponent({
             } catch(e) { console.error(e) }
         }
         const saveGrade = async a => { try { await api.gradeAnswer(selectedHwId.value, a.id, {score: a._score, comment: a._comment}); a.score = a._score; a.comment = a._comment; $m('评分已保存') } catch(e) { $m('失败','error') } }
-        return { hwList, selectedHwId, submissions, answers, gradeVisible, filterStatus, pageNum, pageSize, total, formatD, loadSubmissions, hwChanged, filterChanged, changePage, changeSize, openGrading, saveGrade, TYPE_MAP }
+        return { hwList, selectedHwId, submissions, answers, gradeVisible, filterStatus, pageNum, pageSize, total, formatD, loadSubmissions, hwChanged, filterChanged, changePage, changeSize, openGrading, saveGrade, TYPE_MAP, isSubjective }
     }
 })
 
@@ -1319,7 +1320,7 @@ const StudentHomeworks = defineComponent({
         const statusTag = s => ({NOT_SUBMITTED:'info',SUBMITTED:'warning',GRADED:'success',CLOSED:'info'}[s]||'')
         const statusLabel = s => ({NOT_SUBMITTED:'未提交',SUBMITTED:'已提交',GRADED:'已批改',CLOSED:'已关闭'}[s]||s)
         onMounted(load)
-        return { list, tab, loading, viewingHw, viewingResult, currentHw, questions, answers, submitting, result, filteredList, load, openHw, viewResult, canSubmit, doSubmit, formatD, statusTag, statusLabel, TYPE_MAP }
+        return { list, tab, loading, viewingHw, viewingResult, currentHw, questions, answers, submitting, result, filteredList, load, openHw, viewResult, canSubmit, doSubmit, formatD, statusTag, statusLabel, TYPE_MAP, safeHtml, isSubjective }
     }
 })
 
@@ -1623,6 +1624,12 @@ router.beforeEach(to => {
 })
 
 const app = createApp({})
+// 全局工具函数注册（Vue 3 模板作用域不含模块顶层变量——不在 setup return / globalProperties
+// 注册的函数在模板里调用会 TypeError 导致组件渲染中断，本次题库页空白 bug 根因）
+app.config.globalProperties.isObjective = isObjective
+app.config.globalProperties.isSubjective = isSubjective
+app.config.globalProperties.stripHtml = stripHtml
+app.config.globalProperties.safeHtml = safeHtml
 app.use(ElementPlus)
 app.use(router)
 app.mount('#app')
