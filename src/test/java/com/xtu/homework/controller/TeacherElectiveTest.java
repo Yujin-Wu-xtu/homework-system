@@ -119,6 +119,52 @@ class TeacherElectiveTest extends BaseControllerTest {
         assertFalse(visible, "被移出的学生不应再看到选修班作业");
     }
 
+    /** 选人树：年级→学院→专业→班级→学生；已加入的学生节点 disabled=true（防重复勾选） */
+    @Test
+    @Order(8)
+    void testStudentTreeStructureAndDisabled() throws Exception {
+        MvcResult r = get("/api/teacher/student-tree?tcId=" + electiveTcId, teacherToken());
+        assertOk(r);
+        JsonNode tree = body(r).path("data");
+        assertTrue(tree.size() >= 1, "选人树应至少包含一个年级节点");
+        // 遍历树找学生节点：20240001(STUDENT_ID=3) 已加入 disabled=true，20240002(id=4) 未加入 disabled=false
+        boolean stu1Disabled = false, stu2Disabled = false, stu1Found = false, stu2Found = false;
+        java.util.ArrayDeque<JsonNode> queue = new java.util.ArrayDeque<>();
+        tree.forEach(queue::add);
+        while (!queue.isEmpty()) {
+            JsonNode n = queue.poll();
+            if (n.path("key").asText().equals("stu:" + STUDENT_ID)) { stu1Found = true; stu1Disabled = n.path("disabled").asBoolean(); }
+            if (n.path("key").asText().equals("stu:" + STUDENT2_ID)) { stu2Found = true; stu2Disabled = n.path("disabled").asBoolean(); }
+            if (n.has("children")) n.path("children").forEach(queue::add);
+        }
+        assertTrue(stu1Found && stu2Found, "树中应包含已加入与未加入的学生节点");
+        assertTrue(stu1Disabled, "已加入教学班的学生节点应 disabled");
+        assertFalse(stu2Disabled, "未加入教学班的学生节点不应 disabled");
+    }
+
+    /** 管理员班级树：学院→专业→班级（H2 初始班级无学院 → 归"未分类学院"） */
+    @Test
+    @Order(9)
+    void testAdminClassTree() throws Exception {
+        MvcResult r = get("/api/admin/classes/tree", adminToken());
+        assertOk(r);
+        JsonNode tree = body(r).path("data");
+        boolean foundCollege = false, foundClazzNode = false;
+        for (JsonNode college : tree) {
+            if (college.path("label").asText().equals("未分类学院")) foundCollege = true;
+            for (JsonNode major : college.path("children")) {
+                for (JsonNode clazz : major.path("children")) {
+                    if (clazz.path("clazzId").asLong() > 0) {
+                        foundClazzNode = true;
+                        assertTrue(clazz.path("studentCount").asLong() >= 0, "班级节点应带学生数");
+                    }
+                }
+            }
+        }
+        assertTrue(foundCollege, "无学院班级应归'未分类学院'");
+        assertTrue(foundClazzNode, "树中应包含班级叶子节点");
+    }
+
     private Map<String, Object> homeworkBody(String title) {
         Map<String, Object> body = new HashMap<>();
         body.put("title", title);

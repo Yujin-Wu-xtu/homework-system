@@ -132,6 +132,7 @@ const api = {
     updateProfile: d => axios.put('/api/auth/profile', d),
     changePassword: d => axios.put('/api/auth/password', d),
     dashboard: () => axios.get('/api/admin/dashboard'),
+    classTree: () => axios.get('/api/admin/classes/tree'),
     allStudents: p => axios.get('/api/admin/students', {params: p}),
     // Admin - Teachers
     teachers: p => axios.get('/api/admin/teachers', {params: p}),
@@ -196,6 +197,7 @@ const api = {
     teachingClassAddStudents: (id, d) => axios.post('/api/teacher/teaching-classes/' + id + '/students', d),
     teachingClassRemoveStudent: (id, sid) => axios.delete('/api/teacher/teaching-classes/' + id + '/students/' + sid),
     teacherAllStudents: p => axios.get('/api/teacher/students', {params: p}),
+    teacherStudentTree: tcId => axios.get('/api/teacher/student-tree', {params: {tcId}}),
     resetTcStudentPwds: id => axios.put('/api/teacher/teaching-classes/' + id + '/reset-student-pwds'),
     teacherHomeworks: p => axios.get('/api/teacher/homeworks', {params: p}),
     assignHomework: d => axios.post('/api/teacher/homeworks', d),
@@ -289,23 +291,53 @@ const AdminTeachers = defineComponent({
 const AdminClasses = defineComponent({
     template: `
         <div class="section-card"><h3>班级管理 <el-button type="primary" size="small" @click="showAdd">新增班级</el-button></h3>
-            <el-table :data="list" border stripe>
-                <el-table-column prop="id" label="ID" width="60"/>
-                <el-table-column prop="name" label="班级名称"/>
-                <el-table-column prop="grade" label="年级" width="100"/>
-                <el-table-column prop="major" label="专业" width="150"/>
-                <el-table-column label="操作" width="280">
-                    <template #default="{row}">
-                        <el-button size="small" @click="viewStudents(row)">查看学生</el-button>
-                        <el-button size="small" @click="edit(row)">编辑</el-button>
-                        <el-button size="small" type="danger" @click="del(row.id)">删除</el-button>
+            <div style="display:flex;gap:16px;align-items:flex-start">
+                <!-- 左树：学院 → 专业 → 班级（带学生数） -->
+                <div style="width:300px;flex-shrink:0;border:1px solid #ebeef5;border-radius:6px;padding:8px">
+                    <el-input v-model="treeKeyword" placeholder="搜索学院/专业/班级" size="small" clearable style="margin-bottom:8px" @input="treeRef?.filter"/>
+                    <el-tree ref="treeRef" :data="tree" :props="{label:'label',children:'children'}" node-key="label"
+                             :filter-node-method="filterNode" @node-click="onNodeClick"
+                             :expand-on-click-node="false" highlight-current default-expand-all>
+                        <template #default="{data}">
+                            <span>{{data.label}}</span>
+                            <span v-if="data.studentCount!==undefined" style="color:#909399;font-size:12px;margin-left:6px">({{data.studentCount}}人)</span>
+                        </template>
+                    </el-tree>
+                </div>
+                <!-- 右表：选中班级的学生 -->
+                <div style="flex:1;min-width:0">
+                    <template v-if="currentClazz">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+                            <div>
+                                <b>{{currentClazz.name}}</b>
+                                <el-tag size="small" style="margin-left:8px">{{currentClazz.grade}}</el-tag>
+                                <el-tag size="small" type="info" style="margin-left:4px">{{currentClazz.college||'未分类学院'}} · {{currentClazz.major}}</el-tag>
+                            </div>
+                            <div>
+                                <el-button size="small" type="success" @click="importVisible=true">导入学生Excel</el-button>
+                                <el-button size="small" @click="addVisible=true">新增学生</el-button>
+                                <el-button size="small" @click="edit(currentClazz)">编辑班级</el-button>
+                                <el-button size="small" type="danger" @click="del(currentClazz.id)">删除班级</el-button>
+                            </div>
+                        </div>
+                        <el-table :data="students" border stripe v-loading="studentsLoading">
+                            <el-table-column prop="username" label="学号" width="130"/>
+                            <el-table-column prop="realName" label="姓名" width="120"/>
+                            <el-table-column prop="phone" label="手机号" width="140"/>
+                            <el-table-column prop="email" label="邮箱"/>
+                            <el-table-column label="操作" width="90">
+                                <template #default="{row}"><el-button size="small" type="danger" @click="removeStudent(row)">删除</el-button></template>
+                            </el-table-column>
+                        </el-table>
                     </template>
-                </el-table-column>
-            </el-table>
+                    <el-empty v-else description="点击左侧树选择班级查看学生"/>
+                </div>
+            </div>
             <el-dialog title="新增班级" v-model="dialogVisible" width="460px">
                 <el-form :model="form" label-width="80px">
                     <el-form-item label="班级名称"><el-input v-model="form.name" placeholder="如: 2024级软件工程1班"/></el-form-item>
                     <el-form-item label="年级"><el-input v-model="form.grade" placeholder="如: 2024级"/></el-form-item>
+                    <el-form-item label="学院"><el-input v-model="form.college" placeholder="如: 计算机学院"/></el-form-item>
                     <el-form-item label="专业"><el-input v-model="form.major" placeholder="如: 软件工程"/></el-form-item>
                 </el-form>
                 <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
@@ -314,46 +346,73 @@ const AdminClasses = defineComponent({
                 <el-form :model="editForm" label-width="80px">
                     <el-form-item label="班级名称"><el-input v-model="editForm.name"/></el-form-item>
                     <el-form-item label="年级"><el-input v-model="editForm.grade"/></el-form-item>
+                    <el-form-item label="学院"><el-input v-model="editForm.college"/></el-form-item>
                     <el-form-item label="专业"><el-input v-model="editForm.major"/></el-form-item>
                 </el-form>
                 <template #footer><el-button @click="editVisible=false">取消</el-button><el-button type="primary" @click="saveEdit">保存</el-button></template>
             </el-dialog>
-            <el-dialog title="班级学生" v-model="studentVisible" width="700px">
-                <div style="margin-bottom:8px"><el-upload :show-file-list="false" :before-upload="f=>uploadStudents(f)" accept=".xlsx"><el-button size="small" type="success">导入学生Excel</el-button></el-upload></div>
-                <el-table :data="students" border stripe max-height="400">
-                    <el-table-column prop="username" label="学号" width="120"/>
-                    <el-table-column prop="realName" label="姓名" width="100"/>
-                    <el-table-column prop="phone" label="手机号" width="140"/>
-                    <el-table-column prop="email" label="邮箱"/>
-                </el-table>
+            <el-dialog title="新增学生" v-model="addVisible" width="460px">
+                <el-form :model="addForm" label-width="80px">
+                    <el-form-item label="学号"><el-input v-model="addForm.username" placeholder="必填，如 20240007"/></el-form-item>
+                    <el-form-item label="姓名"><el-input v-model="addForm.realName" placeholder="必填"/></el-form-item>
+                    <el-form-item label="手机号"><el-input v-model="addForm.phone"/></el-form-item>
+                    <el-form-item label="邮箱"><el-input v-model="addForm.email"/></el-form-item>
+                </el-form>
+                <template #footer><el-button @click="addVisible=false">取消</el-button><el-button type="primary" @click="saveAdd">保存</el-button></template>
+            </el-dialog>
+            <el-dialog title="导入学生" v-model="importVisible" width="460px">
+                <p style="margin:0 0 12px;color:#606266">Excel 表头：学号、姓名、电话/手机、邮箱（选填列可省略）；整表校验通过才导入，初始密码 Admin123456</p>
+                <el-upload drag :show-file-list="false" :before-upload="f=>uploadStudents(f)" accept=".xlsx">
+                    <div style="padding:20px">📁 点击或拖拽 .xlsx 文件到此处导入</div>
+                </el-upload>
+                <template #footer><el-button @click="importVisible=false">关闭</el-button></template>
             </el-dialog>
         </div>`,
     setup() {
-        const list = ref([]), dialogVisible = ref(false), editVisible = ref(false), studentVisible = ref(false)
-        const form = reactive({name:'',grade:'',major:''}), editForm = reactive({id:null,name:'',grade:'',major:''})
-        const students = ref([]), currentClazzId = ref(null)
-        const load = async () => { try { const r = await api.classes({page:1,size:100}); list.value = r.data.data.records } catch(e) { console.error(e) } }
-        const showAdd = () => { Object.assign(form, {name:'',grade:'',major:''}); dialogVisible.value = true }
-        const save = async () => { try { await api.addClass(form); dialogVisible.value = false; load(); $m('新增成功') } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
-        const edit = row => { Object.assign(editForm, row); editVisible.value = true }
-        const saveEdit = async () => { try { await api.updateClass(editForm.id, editForm); editVisible.value = false; load(); $m('修改成功') } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
-        const del = id => { $c('确定删除该班级？').then(async ()=>{ await api.deleteClass(id); load(); $m('已删除') }).catch(()=>{}) }
-        const viewStudents = async row => { currentClazzId.value = row.id; studentVisible.value = true; try { const r = await api.classStudents(row.id, {page:1,size:200}); students.value = r.data.data.records } catch(e) { console.error(e) } }
+        const tree = ref([]), treeKeyword = ref(''), treeRef = ref(null)
+        const currentClazz = ref(null), students = ref([]), studentsLoading = ref(false)
+        const dialogVisible = ref(false), editVisible = ref(false), addVisible = ref(false), importVisible = ref(false)
+        const form = reactive({name:'',grade:'',college:'',major:''}), editForm = reactive({id:null,name:'',grade:'',college:'',major:''})
+        const addForm = reactive({username:'',realName:'',phone:'',email:''})
+        const load = async () => {
+            try { const r = await api.classTree(); tree.value = r.data.data || [] } catch(e) { console.error(e) }
+        }
+        const filterNode = (value, data) => !value || (data.label || '').includes(value)
+        const onNodeClick = data => {
+            if (data.clazzId === undefined) { currentClazz.value = null; students.value = []; return }
+            currentClazz.value = data
+            loadStudents(data.clazzId)
+        }
+        const loadStudents = async clazzId => {
+            studentsLoading.value = true
+            try { const r = await api.classStudents(clazzId, {page:1,size:500}); students.value = r.data.data.records } catch(e) { console.error(e) }
+            finally { studentsLoading.value = false }
+        }
+        const showAdd = () => { Object.assign(form, {name:'',grade:'',college:'',major:''}); dialogVisible.value = true }
+        const save = async () => { try { await api.addClass(form); dialogVisible.value = false; $m('新增成功'); load() } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
+        const edit = row => { Object.assign(editForm, {id:row.clazzId, name:row.name, grade:row.grade, college:row.college||'', major:row.major||''}); editVisible.value = true }
+        const saveEdit = async () => { try { await api.updateClass(editForm.id, editForm); editVisible.value = false; $m('修改成功'); load() } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
+        const del = id => { $c('确定删除该班级？').then(async ()=>{ await api.deleteClass(id); currentClazz.value = null; students.value = []; load(); $m('已删除') }).catch(()=>{}) }
+        const removeStudent = row => { $c(`确定删除学生「${row.realName}（${row.username}）」？`).then(async ()=>{ await api.deleteStudent(row.id); $m('已删除'); loadStudents(currentClazz.value.clazzId); load() }).catch(()=>{}) }
+        const saveAdd = async () => {
+            if (!addForm.username || !addForm.realName) return $m('学号和姓名必填','error')
+            try { await api.addStudent({...addForm, clazzId: currentClazz.value.clazzId}); addVisible.value = false; $m('新增成功'); loadStudents(currentClazz.value.clazzId); load() } catch(e) { $m(e.response?.data?.msg||'失败','error') }
+        }
         const uploadStudents = file => {
-            api.importStudents(file, currentClazzId.value).then(r => {
+            api.importStudents(file, currentClazz.value.clazzId).then(r => {
                 const d = r.data.data
                 if (d.errors && d.errors.length) {
                     const lines = d.errors.slice(0, 10).map(e => `第${e.row}行：${e.msg}`).join('\n')
                     ElementPlus.ElMessageBox.alert(`导入校验未通过（共 ${d.errors.length} 条错误），未导入任何学生：\n\n${lines}${d.errors.length > 10 ? `\n…其余 ${d.errors.length - 10} 条略` : ''}`, '导入排错', { type: 'error' })
                 } else {
                     $m(`成功导入 ${d.imported} 名学生（初始密码 Admin123456，首次登录需修改）`)
-                    viewStudents({id: currentClazzId.value})
+                    loadStudents(currentClazz.value.clazzId); load()
                 }
             }).catch(e => $m(e.response?.data?.msg || '导入失败', 'error'))
             return false
         }
         onMounted(load)
-        return { list, dialogVisible, editVisible, studentVisible, form, editForm, students, showAdd, save, edit, saveEdit, del, viewStudents, uploadStudents }
+        return { tree, treeKeyword, treeRef, filterNode, onNodeClick, currentClazz, students, studentsLoading, dialogVisible, editVisible, addVisible, importVisible, form, editForm, addForm, showAdd, save, edit, saveEdit, del, removeStudent, saveAdd, uploadStudents }
     }
 })
 
@@ -991,33 +1050,67 @@ const TeacherTeachingClasses = defineComponent({
                 </el-table>
                 <template #footer><el-button @click="classesVisible=false">关闭</el-button></template>
             </el-dialog>
-            <el-dialog :title="'教学班学生 - ' + (currentRow?.name||'')" v-model="studentsVisible" width="720px">
-                <!-- 选修教学班：从全部学生中自由选择加入 -->
-                <div v-if="currentRow?.courseType==='ELECTIVE'" style="display:flex;gap:8px;margin-bottom:8px">
-                    <el-select v-model="selectedStudentIds" multiple filterable placeholder="从全部学生中选择（可搜索学号/姓名）" style="flex:1">
-                        <el-option v-for="s in allStudents" :key="s.id" :label="s.username + ' ' + s.realName" :value="s.id"/>
-                    </el-select>
-                    <el-button type="primary" @click="addStudents">加入选中</el-button>
+            <el-dialog :title="'教学班学生 - ' + (currentRow?.name||'')" v-model="studentsVisible" width="980px">
+                <!-- 选修教学班：左树形勾选（年级→学院→专业→班级→学生，已加入 disabled）右联动表格 -->
+                <div v-if="currentRow?.courseType==='ELECTIVE'" style="display:flex;gap:12px;align-items:flex-start">
+                    <div style="width:360px;flex-shrink:0;border:1px solid #ebeef5;border-radius:6px;padding:8px;max-height:500px;overflow:auto">
+                        <el-input v-model="treeKeyword" placeholder="搜索年级/学院/专业/班级/学生" size="small" clearable style="margin-bottom:8px" @input="studentTreeRef?.filter"/>
+                        <el-tree ref="studentTreeRef" :data="studentTree" show-checkbox node-key="key"
+                                 :props="{label:'label',children:'children'}" :filter-node-method="filterNode"
+                                 @check="onTreeCheck" :expand-on-click-node="false" default-expand-all>
+                            <template #default="{data}">
+                                <span>{{data.label}}</span>
+                                <el-tag v-if="data.disabled" size="mini" type="info" style="margin-left:4px">已加入</el-tag>
+                            </template>
+                        </el-tree>
+                    </div>
+                    <div style="flex:1;min-width:0">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                            <b>本次勾选（{{selectedStudents.length}} 人）</b>
+                            <div>
+                                <el-button size="small" type="primary" :disabled="!selectedStudents.length" @click="addStudents">加入选中（{{selectedStudents.length}} 人）</el-button>
+                                <el-button size="small" @click="clearSelection">清空勾选</el-button>
+                            </div>
+                        </div>
+                        <el-table :data="selectedStudents" border stripe max-height="220" size="small">
+                            <el-table-column prop="username" label="学号" width="110"/>
+                            <el-table-column prop="realName" label="姓名" width="100"/>
+                            <el-table-column prop="clazzName" label="班级"/>
+                            <el-table-column label="操作" width="70"><template #default="{row}"><el-button size="mini" type="danger" @click="uncheckStudent(row)">移除</el-button></template></el-table-column>
+                        </el-table>
+                        <el-divider content-position="left" style="margin:12px 0">已加入（{{students.length}} 人）</el-divider>
+                        <el-table :data="students" border stripe max-height="220" size="small">
+                            <el-table-column prop="username" label="学号" width="110"/>
+                            <el-table-column prop="realName" label="姓名" width="100"/>
+                            <el-table-column prop="clazzId" label="班级ID" width="80"/>
+                            <el-table-column label="操作" width="150">
+                                <template #default="{row}">
+                                    <el-button size="mini" type="warning" @click="resetOnePwd(row)">重置密码</el-button>
+                                    <el-button size="mini" type="danger" @click="removeStudent(row)">移出</el-button>
+                                </template>
+                            </el-table-column>
+                        </el-table>
+                    </div>
                 </div>
-                <el-button size="small" type="warning" style="margin-bottom:8px" @click="resetPwds">重置全部学生密码</el-button>
-                <el-table :data="students" border stripe max-height="320">
-                    <el-table-column prop="username" label="学号" width="140"/>
-                    <el-table-column prop="realName" label="姓名"/>
-                    <el-table-column prop="clazzId" label="班级ID" width="80"/>
-                    <el-table-column label="操作" width="180">
-                        <template #default="{row}">
-                            <el-button size="small" type="warning" @click="resetOnePwd(row)">重置密码</el-button>
-                            <el-button v-if="currentRow?.courseType==='ELECTIVE'" size="small" type="danger" @click="removeStudent(row)">移出</el-button>
-                        </template>
-                    </el-table-column>
-                </el-table>
+                <!-- 必修教学班：按自然班拉取，学生表格 + 重置密码 -->
+                <template v-else>
+                    <el-button size="small" type="warning" style="margin-bottom:8px" @click="resetPwds">重置全部学生密码</el-button>
+                    <el-table :data="students" border stripe max-height="420">
+                        <el-table-column prop="username" label="学号" width="140"/>
+                        <el-table-column prop="realName" label="姓名"/>
+                        <el-table-column prop="clazzId" label="班级ID" width="80"/>
+                        <el-table-column label="操作" width="110">
+                            <template #default="{row}"><el-button size="small" type="warning" @click="resetOnePwd(row)">重置密码</el-button></template>
+                        </el-table-column>
+                    </el-table>
+                </template>
             </el-dialog>
         </div>`,
     setup() {
         const list = ref([]), dialogVisible = ref(false), isEdit = ref(false), form = reactive({id:null,name:'',courseType:'REQUIRED'})
         const classesVisible = ref(false), studentsVisible = ref(false), currentRow = ref(null)
         const allClasses = ref([]), selectedClazzIds = ref([]), tcClasses = ref([]), students = ref([])
-        const allStudents = ref([]), selectedStudentIds = ref([])
+        const studentTree = ref([]), treeKeyword = ref(''), studentTreeRef = ref(null), selectedStudents = ref([])
         const load = async () => { try { const r = await api.teacherTeachingClasses({page:1,size:100}); list.value = r.data.data.records } catch(e) { console.error(e) } }
         const showAdd = () => { Object.assign(form,{id:null,name:'',courseType:'REQUIRED'}); isEdit.value = false; dialogVisible.value = true }
         const edit = row => { Object.assign(form,{id:row.id,name:row.name,courseType:row.courseType}); isEdit.value = true; dialogVisible.value = true }
@@ -1038,16 +1131,38 @@ const TeacherTeachingClasses = defineComponent({
             try { await api.teachingClassRemoveClass(currentRow.value.id, cid); $m('已移除'); manageClasses(currentRow.value) } catch(e) { $m(e.response?.data?.msg||'失败','error') }
         }
         const viewStudents = async row => {
-            currentRow.value = row; studentsVisible.value = true; selectedStudentIds.value = []
+            currentRow.value = row; studentsVisible.value = true
             try { const r = await api.teachingClassStudents(row.id); students.value = r.data.data } catch(e) { console.error(e) }
-            // 选修教学班：加载全部学生供选择（模拟教务系统选课名单）
+            // 选修教学班：加载选人树（年级→学院→专业→班级→学生，已加入节点 disabled）
             if (row.courseType === 'ELECTIVE') {
-                try { const r2 = await api.teacherAllStudents({page:1,size:500}); allStudents.value = r2.data.data.records } catch(e) { console.error(e) }
+                selectedStudents.value = []
+                try { const r2 = await api.teacherStudentTree(row.id); studentTree.value = r2.data.data || [] } catch(e) { console.error(e) }
             }
         }
+        // 树勾选变化 → 收集勾选的叶子学生（学号/姓名/班级名），右侧"本次勾选"表格实时联动
+        const onTreeCheck = () => {
+            if (!studentTreeRef.value) return
+            const checked = studentTreeRef.value.getCheckedNodes(false, true) || []
+            const clazzNameOf = key => {
+                let n = studentTreeRef.value.getNode(key)
+                while (n && n.parent && !(n.data?.key || '').startsWith('clazz:')) n = n.parent
+                return n && (n.data?.key || '').startsWith('clazz:') ? n.data.label : ''
+            }
+            selectedStudents.value = checked.filter(n => (n.key || '').startsWith('stu:')).map(n => {
+                const parts = (n.label || '').split(' ')
+                return { id: Number(n.key.split(':')[1]), username: parts[0], realName: parts.slice(1).join(' '), clazzName: clazzNameOf(n.key) }
+            })
+        }
+        const clearSelection = () => { if (studentTreeRef.value) studentTreeRef.value.setCheckedKeys([]); selectedStudents.value = [] }
+        const uncheckStudent = row => {
+            if (studentTreeRef.value) studentTreeRef.value.setChecked('stu:' + row.id, false)
+            selectedStudents.value = selectedStudents.value.filter(s => s.id !== row.id)
+        }
+        const filterNode = (value, data) => !value || (data.label || '').includes(value)
         const addStudents = async () => {
-            if (!selectedStudentIds.value.length) return $m('请选择学生','error')
-            try { await api.teachingClassAddStudents(currentRow.value.id, {studentIds: selectedStudentIds.value}); $m('已加入'); viewStudents(currentRow.value) } catch(e) { $m(e.response?.data?.msg||'失败','error') }
+            const ids = selectedStudents.value.map(s => s.id)
+            if (!ids.length) return $m('请先在左侧勾选学生','error')
+            try { await api.teachingClassAddStudents(currentRow.value.id, {studentIds: ids}); $m('已加入'); viewStudents(currentRow.value) } catch(e) { $m(e.response?.data?.msg||'失败','error') }
         }
         const removeStudent = async row => {
             try { await api.teachingClassRemoveStudent(currentRow.value.id, row.id); $m('已移出'); viewStudents(currentRow.value) } catch(e) { $m(e.response?.data?.msg||'失败','error') }
@@ -1069,7 +1184,7 @@ const TeacherTeachingClasses = defineComponent({
             } catch(e) { $m(e.response?.data?.msg||'重置失败','error') }
         }
         onMounted(async () => { load(); try { const r = await api.teacherClasses({page:1,size:100}); allClasses.value = r.data.data.records } catch(e) { console.error(e) } })
-        return { list, dialogVisible, isEdit, form, showAdd, edit, save, del, manageClasses, classesVisible, studentsVisible, currentRow, allClasses, selectedClazzIds, tcClasses, students, allStudents, selectedStudentIds, addClasses, removeClass, viewStudents, addStudents, removeStudent, resetPwds, resetOnePwd }
+        return { list, dialogVisible, isEdit, form, showAdd, edit, save, del, manageClasses, classesVisible, studentsVisible, currentRow, allClasses, selectedClazzIds, tcClasses, students, studentTree, treeKeyword, studentTreeRef, selectedStudents, addClasses, removeClass, viewStudents, onTreeCheck, clearSelection, uncheckStudent, filterNode, addStudents, removeStudent, resetPwds, resetOnePwd }
     }
 })
 

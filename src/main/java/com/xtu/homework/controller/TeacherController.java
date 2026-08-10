@@ -237,6 +237,60 @@ public class TeacherController {
         return R.ok().data(userDao.selectPage(new Page<>(page, size), qw));
     }
 
+    /**
+     * 选修选人树：年级 → 学院 → 专业 → 班级 → 学生（树形批量勾选，替代 Select 下拉）。
+     * 学生节点带 disabled（该教学班已加入的不可重复勾选）；勾选任意节点 = 选中其下所有学生。
+     */
+    @GetMapping("/student-tree")
+    public R getStudentTree(@RequestParam(required = false) Long tcId) {
+        List<Clazz> classes = clazzDao.selectList(new LambdaQueryWrapper<Clazz>()
+                .orderByAsc(Clazz::getCollege).orderByAsc(Clazz::getMajor).orderByAsc(Clazz::getName));
+        List<User> students = userDao.selectList(new LambdaQueryWrapper<User>()
+                .eq(User::getRole, "STUDENT").eq(User::getStatus, "ACTIVE")
+                .orderByAsc(User::getClazzId).orderByAsc(User::getUsername));
+        // 该教学班已加入学生（节点 disabled 防重复加入；移出后刷新树恢复可选）
+        Set<Long> inClassIds = new HashSet<>();
+        if (tcId != null) {
+            teachingClassStudentDao.selectList(new LambdaQueryWrapper<TeachingClassStudent>()
+                            .eq(TeachingClassStudent::getTeachingClassId, tcId))
+                    .forEach(tcs -> inClassIds.add(tcs.getStudentId()));
+        }
+        // 学生按班级分组
+        Map<Long, List<Map<String, Object>>> stuByClazz = new LinkedHashMap<>();
+        for (User s : students) {
+            if (s.getClazzId() == null) continue;   // 无班级学生不出现在树里（管理员单独管理）
+            stuByClazz.computeIfAbsent(s.getClazzId(), k -> new ArrayList<>())
+                    .add(Map.of("key", "stu:" + s.getId(),
+                            "label", s.getUsername() + " " + s.getRealName(),
+                            "disabled", inClassIds.contains(s.getId())));
+        }
+        // 四级聚合：年级 → 学院 → 专业 → 班级
+        Map<String, Map<String, Map<String, Map<String, Object>>>> tree = new LinkedHashMap<>();
+        for (Clazz c : classes) {
+            List<Map<String, Object>> stuNodes = stuByClazz.get(c.getId());
+            if (stuNodes == null || stuNodes.isEmpty()) continue;   // 空班级不占树节点
+            String grade = (c.getGrade() == null || c.getGrade().isBlank()) ? "未分年级" : c.getGrade();
+            String college = (c.getCollege() == null || c.getCollege().isBlank()) ? "未分类学院" : c.getCollege();
+            String major = (c.getMajor() == null || c.getMajor().isBlank()) ? "未分类专业" : c.getMajor();
+            tree.computeIfAbsent(grade, k -> new LinkedHashMap<>())
+                    .computeIfAbsent(college, k -> new LinkedHashMap<>())
+                    .computeIfAbsent(major, k -> new LinkedHashMap<>())
+                    .put("clazz:" + c.getId(), Map.of("key", "clazz:" + c.getId(), "label", c.getName(), "children", stuNodes));
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        tree.forEach((grade, colleges) -> {
+            List<Map<String, Object>> collegeNodes = new ArrayList<>();
+            colleges.forEach((college, majors) -> {
+                List<Map<String, Object>> majorNodes = new ArrayList<>();
+                majors.forEach((major, clazzes) ->
+                        majorNodes.add(Map.of("key", "major:" + major, "label", major, "children", clazzes.values().stream().toList())));
+                collegeNodes.add(Map.of("key", "college:" + college, "label", college, "children", majorNodes));
+            });
+            result.add(Map.of("key", "grade:" + grade, "label", grade, "children", collegeNodes));
+        });
+        return R.ok().data(result);
+    }
+
     @PutMapping("/teaching-classes/{id}/reset-student-pwds")
     public R resetTeachingClassStudentPwds(@RequestAttribute("userId") Long teacherId,
                                            @PathVariable Long id) {

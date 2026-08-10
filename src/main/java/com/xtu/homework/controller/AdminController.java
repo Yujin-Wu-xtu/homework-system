@@ -15,8 +15,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -107,6 +107,40 @@ public class AdminController {
     public R listClasses(@RequestParam(defaultValue = "1") int page,
                          @RequestParam(defaultValue = "10") int size) {
         return R.ok().data(clazzDao.selectPage(new Page<>(page, size), null));
+    }
+
+    /** 班级层级树：学院 → 专业 → 班级（节点带学生数；老数据学院为空归"未分类学院"）——管理员班级管理左树右表数据源 */
+    @GetMapping("/classes/tree")
+    public R getClassTree() {
+        List<Clazz> classes = clazzDao.selectList(new LambdaQueryWrapper<Clazz>()
+                .orderByAsc(Clazz::getCollege).orderByAsc(Clazz::getMajor).orderByAsc(Clazz::getName));
+        // 学生数按班级分组
+        List<User> students = userDao.selectList(new LambdaQueryWrapper<User>().eq(User::getRole, "STUDENT"));
+        Map<Long, Long> cntByClazz = students.stream().collect(Collectors.groupingBy(
+                s -> s.getClazzId() == null ? -1L : s.getClazzId(), Collectors.counting()));
+        // 三级聚合：学院 → 专业 → 班级
+        Map<String, Map<String, List<Map<String, Object>>>> tree = new LinkedHashMap<>();
+        for (Clazz c : classes) {
+            String college = (c.getCollege() == null || c.getCollege().isBlank()) ? "未分类学院" : c.getCollege();
+            String major = (c.getMajor() == null || c.getMajor().isBlank()) ? "未分类专业" : c.getMajor();
+            tree.computeIfAbsent(college, k -> new LinkedHashMap<>())
+                    .computeIfAbsent(major, k -> new ArrayList<>())
+                    .add(Map.of("label", c.getName(), "clazzId", c.getId(), "name", c.getName(), "grade", c.getGrade(),
+                            "college", c.getCollege() == null ? "" : c.getCollege(),
+                            "major", c.getMajor() == null ? "" : c.getMajor(),
+                            "studentCount", cntByClazz.getOrDefault(c.getId(), 0L)));
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        tree.forEach((college, majors) -> {
+            List<Map<String, Object>> majorNodes = new ArrayList<>();
+            majors.forEach((major, clazzes) -> {
+                long majorCount = clazzes.stream().mapToLong(m -> (Long) m.get("studentCount")).sum();
+                majorNodes.add(Map.of("label", major, "studentCount", majorCount, "children", clazzes));
+            });
+            long collegeCount = majorNodes.stream().mapToLong(m -> (Long) m.get("studentCount")).sum();
+            result.add(Map.of("label", college, "studentCount", collegeCount, "children", majorNodes));
+        });
+        return R.ok().data(result);
     }
 
     @PostMapping("/classes")
