@@ -658,9 +658,16 @@ public class AdminController {
     }
 
     @DeleteMapping("/knowledge-points/{id}")
+    @Transactional
     public R deleteKnowledgePoint(@PathVariable Long id) {
+        if (id == null) {
+            return R.badRequest("知识点不存在");
+        }
+        // 清理题目-知识点关联（外键子表，否则 FOREIGN KEY 约束阻止删除）
+        questionKnowledgeDao.delete(new LambdaQueryWrapper<QuestionKnowledge>()
+                .eq(QuestionKnowledge::getKnowledgePointId, id));
         knowledgePointDao.deleteById(id);
-        return R.ok();
+        return R.ok("知识点已删除");
     }
 
     // ---- 教学班管理 ----

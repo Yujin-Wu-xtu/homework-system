@@ -2,8 +2,10 @@ package com.xtu.homework.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.xtu.homework.dao.QuestionKnowledgeDao;
 import com.xtu.homework.dao.TeachingClassClazzDao;
 import com.xtu.homework.dao.UserDao;
+import com.xtu.homework.entity.QuestionKnowledge;
 import com.xtu.homework.entity.TeachingClassClazz;
 import com.xtu.homework.entity.User;
 import org.junit.jupiter.api.*;
@@ -31,6 +33,8 @@ class AdminControllerTest extends BaseControllerTest {
     private UserDao userDao;
     @Autowired
     private TeachingClassClazzDao teachingClassClazzDao;
+    @Autowired
+    private QuestionKnowledgeDao questionKnowledgeDao;
 
     private static final String T_TEACHER_USER = "TEST-T-01";
     private static final String T_STUDENT_USER = "TEST-S-01";
@@ -259,8 +263,19 @@ class AdminControllerTest extends BaseControllerTest {
         }
         assertTrue(found, "修改后知识点应能检索到");
 
+        // 外键场景：题目关联该知识点（question_knowledge 外键约束）后仍应可删除，且关联随删
+        MvcResult qs = get("/api/admin/questions?page=1&size=1", adminToken());
+        long qid = body(qs).path("data").path("records").get(0).path("id").asLong();
+        QuestionKnowledge qk = new QuestionKnowledge();
+        qk.setQuestionId(qid);
+        qk.setKnowledgePointId(testKpId);
+        questionKnowledgeDao.insert(qk);
+
         MvcResult del = delete("/api/admin/knowledge-points/" + testKpId, adminToken());
         assertOk(del);
+        Long relLeft = questionKnowledgeDao.selectCount(new LambdaQueryWrapper<QuestionKnowledge>()
+                .eq(QuestionKnowledge::getKnowledgePointId, testKpId));
+        assertEquals(0L, relLeft, "题目-知识点关联应随知识点删除清理（外键子表）");
     }
 
     // ========== 应用题（APPLICATION：富文本题干 + 参考答案，主观题链路）==========

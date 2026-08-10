@@ -1015,7 +1015,7 @@ const AdminKnowledge = defineComponent({
                 dialogVisible.value = false; load(); $m(isEdit.value?'修改成功':'新增成功')
             } catch(e) { $m(e.response?.data?.msg||'失败','error') }
         }
-        const del = id => { $c('确定删除该知识点？').then(async ()=>{ await api.deleteKnowledgePoint(id); load(); $m('已删除') }).catch(()=>{}) }
+        const del = id => { $c('确定删除该知识点？').then(async ()=>{ const r = await api.deleteKnowledgePoint(id); if (r.data.code !== 200) { $m(r.data.msg || '删除失败','error'); return } load(); $m('已删除') }).catch(()=>{}) }
         onMounted(load)
         return { list, dialogVisible, isEdit, form, showAdd, edit, save, del }
     }
