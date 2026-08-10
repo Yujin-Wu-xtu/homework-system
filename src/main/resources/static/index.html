@@ -263,7 +263,7 @@ const AdminTeachers = defineComponent({
                     </template>
                 </el-table-column>
             </el-table>
-            <el-pagination v-if="total > pageSize" :current-page="page" :page-size="pageSize" :total="total"
+            <el-pagination v-if="total > 0" :current-page="page" :page-size="pageSize" :total="total"
                            :page-sizes="[10, 50, 100]" layout="total, sizes, prev, pager, next, jumper"
                            style="margin-top:12px;justify-content:flex-end"
                            @current-change="onPageChange" @size-change="onSizeChange"/>
@@ -337,7 +337,7 @@ const AdminClasses = defineComponent({
                                 <template #default="{row}"><el-button size="small" type="danger" @click="removeStudent(row)">删除</el-button></template>
                             </el-table-column>
                         </el-table>
-                        <el-pagination v-if="total > pageSize" :current-page="page" :page-size="pageSize" :total="total"
+                        <el-pagination v-if="total > 0" :current-page="page" :page-size="pageSize" :total="total"
                                        :page-sizes="[10, 50, 100]" layout="total, sizes, prev, pager, next, jumper" style="margin-top:12px;justify-content:flex-end"
                                        @current-change="onPageChange" @size-change="onSizeChange"/>
                     </template>
@@ -463,7 +463,7 @@ const AdminStudents = defineComponent({
                 </el-table-column>
             </el-table>
             <p v-if="!students.length" style="color:#909399">暂无学生{{ selectedClazzId ? '' : '（点击新增或 Excel 导入）' }}</p>
-            <el-pagination v-if="total > pageSize" :current-page="page" :page-size="pageSize" :total="total"
+            <el-pagination v-if="total > 0" :current-page="page" :page-size="pageSize" :total="total"
                            :page-sizes="[10, 50, 100]" layout="total, sizes, prev, pager, next, jumper" style="margin-top:12px;justify-content:flex-end"
                            @current-change="onPageChange" @size-change="onSizeChange"/>
             <el-dialog title="新增学生" v-model="addVisible" width="460px">
@@ -553,7 +553,7 @@ const AdminQuestions = defineComponent({
                     </template>
                 </el-table-column>
             </el-table>
-            <el-pagination v-if="total > pageSize" :current-page="page" :page-size="pageSize" :total="total"
+            <el-pagination v-if="total > 0" :current-page="page" :page-size="pageSize" :total="total"
                            :page-sizes="[10, 50, 100]" layout="total, sizes, prev, pager, next, jumper"
                            style="margin-top:12px;justify-content:flex-end"
                            @current-change="onPageChange" @size-change="onSizeChange"/>
