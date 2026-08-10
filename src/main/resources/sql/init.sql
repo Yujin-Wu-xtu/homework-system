@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS teaching_class (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL COMMENT '教学班级名称',
     teacher_id BIGINT NOT NULL COMMENT '教师ID',
+    course_type VARCHAR(20) NOT NULL DEFAULT 'REQUIRED' COMMENT '课程类型：REQUIRED=必修(专业课，按自然班拉学生) / ELECTIVE=选修(自由选学生)',
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_teacher (teacher_id),
@@ -57,7 +58,17 @@ CREATE TABLE IF NOT EXISTS teaching_class_clazz (
     INDEX idx_clazz (clazz_id),
     FOREIGN KEY (teaching_class_id) REFERENCES teaching_class(id),
     FOREIGN KEY (clazz_id) REFERENCES clazz(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='教学班级-自然班级关联表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='教学班级-自然班级关联表（必修教学班用，学生动态查询）';
+
+CREATE TABLE IF NOT EXISTS teaching_class_student (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    teaching_class_id BIGINT NOT NULL,
+    student_id BIGINT NOT NULL,
+    INDEX idx_tc (teaching_class_id),
+    INDEX idx_student (student_id),
+    FOREIGN KEY (teaching_class_id) REFERENCES teaching_class(id),
+    FOREIGN KEY (student_id) REFERENCES sys_user(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='教学班级-学生关联表（选修教学班用，学生静态选择）';
 
 CREATE TABLE IF NOT EXISTS knowledge_point (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,

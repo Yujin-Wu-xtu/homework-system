@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS teaching_class (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     teacher_id BIGINT NOT NULL,
+    course_type VARCHAR(20) NOT NULL DEFAULT 'REQUIRED',
     create_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -41,6 +42,12 @@ CREATE TABLE IF NOT EXISTS teaching_class_clazz (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     teaching_class_id BIGINT NOT NULL,
     clazz_id BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS teaching_class_student (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    teaching_class_id BIGINT NOT NULL,
+    student_id BIGINT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS knowledge_point (

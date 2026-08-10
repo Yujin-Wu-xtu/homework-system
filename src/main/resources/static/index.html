@@ -193,6 +193,9 @@ const api = {
     teachingClassRemoveClass: (id, cid) => axios.delete(`/api/teacher/teaching-classes/${id}/classes/${cid}`),
     teachingClassResetStudentPwd: (id, sid) => axios.put(`/api/teacher/teaching-classes/${id}/students/${sid}/reset-pwd`),
     teachingClassStudents: id => axios.get('/api/teacher/teaching-classes/' + id + '/students'),
+    teachingClassAddStudents: (id, d) => axios.post('/api/teacher/teaching-classes/' + id + '/students', d),
+    teachingClassRemoveStudent: (id, sid) => axios.delete('/api/teacher/teaching-classes/' + id + '/students/' + sid),
+    teacherAllStudents: p => axios.get('/api/teacher/students', {params: p}),
     resetTcStudentPwds: id => axios.put('/api/teacher/teaching-classes/' + id + '/reset-student-pwds'),
     teacherHomeworks: p => axios.get('/api/teacher/homeworks', {params: p}),
     assignHomework: d => axios.post('/api/teacher/homeworks', d),
@@ -947,9 +950,12 @@ const TeacherTeachingClasses = defineComponent({
             <el-table :data="list" border stripe>
                 <el-table-column prop="id" label="ID" width="60"/>
                 <el-table-column prop="name" label="教学班名称"/>
+                <el-table-column label="类型" width="90">
+                    <template #default="{row}"><el-tag :type="row.courseType==='ELECTIVE'?'warning':'success'" size="small">{{row.courseType==='ELECTIVE'?'选修':'必修'}}</el-tag></template>
+                </el-table-column>
                 <el-table-column label="操作" width="360">
                     <template #default="{row}">
-                        <el-button size="small" @click="manageClasses(row)">组建班级</el-button>
+                        <el-button size="small" @click="manageClasses(row)" v-if="row.courseType!=='ELECTIVE'">组建班级</el-button>
                         <el-button size="small" @click="viewStudents(row)">学生</el-button>
                         <el-button size="small" @click="edit(row)">编辑</el-button>
                         <el-button size="small" type="danger" @click="del(row)">删除</el-button>
@@ -959,6 +965,13 @@ const TeacherTeachingClasses = defineComponent({
             <el-dialog :title="isEdit?'编辑教学班':'新建教学班'" v-model="dialogVisible" width="420px">
                 <el-form :model="form" label-width="90px">
                     <el-form-item label="名称"><el-input v-model="form.name" placeholder="如: 2024级数据结构教学班"/></el-form-item>
+                    <el-form-item label="课程类型">
+                        <el-radio-group v-model="form.courseType" :disabled="isEdit">
+                            <el-radio value="REQUIRED">必修（专业课）</el-radio>
+                            <el-radio value="ELECTIVE">选修（自由选学生）</el-radio>
+                        </el-radio-group>
+                        <div style="color:#909399;font-size:12px;margin-top:4px">必修：按自然班级拉取整个班的学生；选修：从全部学生中自由选择（模拟教务系统选课）</div>
+                    </el-form-item>
                 </el-form>
                 <template #footer><el-button @click="dialogVisible=false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
             </el-dialog>
@@ -978,27 +991,36 @@ const TeacherTeachingClasses = defineComponent({
                 </el-table>
                 <template #footer><el-button @click="classesVisible=false">关闭</el-button></template>
             </el-dialog>
-            <el-dialog :title="'教学班学生 - ' + (currentRow?.name||'')" v-model="studentsVisible" width="620px">
+            <el-dialog :title="'教学班学生 - ' + (currentRow?.name||'')" v-model="studentsVisible" width="720px">
+                <!-- 选修教学班：从全部学生中自由选择加入 -->
+                <div v-if="currentRow?.courseType==='ELECTIVE'" style="display:flex;gap:8px;margin-bottom:8px">
+                    <el-select v-model="selectedStudentIds" multiple filterable placeholder="从全部学生中选择（可搜索学号/姓名）" style="flex:1">
+                        <el-option v-for="s in allStudents" :key="s.id" :label="s.username + ' ' + s.realName" :value="s.id"/>
+                    </el-select>
+                    <el-button type="primary" @click="addStudents">加入选中</el-button>
+                </div>
                 <el-button size="small" type="warning" style="margin-bottom:8px" @click="resetPwds">重置全部学生密码</el-button>
                 <el-table :data="students" border stripe max-height="320">
                     <el-table-column prop="username" label="学号" width="140"/>
                     <el-table-column prop="realName" label="姓名"/>
                     <el-table-column prop="clazzId" label="班级ID" width="80"/>
-                    <el-table-column label="操作" width="110">
+                    <el-table-column label="操作" width="180">
                         <template #default="{row}">
                             <el-button size="small" type="warning" @click="resetOnePwd(row)">重置密码</el-button>
+                            <el-button v-if="currentRow?.courseType==='ELECTIVE'" size="small" type="danger" @click="removeStudent(row)">移出</el-button>
                         </template>
                     </el-table-column>
                 </el-table>
             </el-dialog>
         </div>`,
     setup() {
-        const list = ref([]), dialogVisible = ref(false), isEdit = ref(false), form = reactive({id:null,name:''})
+        const list = ref([]), dialogVisible = ref(false), isEdit = ref(false), form = reactive({id:null,name:'',courseType:'REQUIRED'})
         const classesVisible = ref(false), studentsVisible = ref(false), currentRow = ref(null)
         const allClasses = ref([]), selectedClazzIds = ref([]), tcClasses = ref([]), students = ref([])
+        const allStudents = ref([]), selectedStudentIds = ref([])
         const load = async () => { try { const r = await api.teacherTeachingClasses({page:1,size:100}); list.value = r.data.data.records } catch(e) { console.error(e) } }
-        const showAdd = () => { Object.assign(form,{id:null,name:''}); isEdit.value = false; dialogVisible.value = true }
-        const edit = row => { Object.assign(form,{id:row.id,name:row.name}); isEdit.value = true; dialogVisible.value = true }
+        const showAdd = () => { Object.assign(form,{id:null,name:'',courseType:'REQUIRED'}); isEdit.value = false; dialogVisible.value = true }
+        const edit = row => { Object.assign(form,{id:row.id,name:row.name,courseType:row.courseType}); isEdit.value = true; dialogVisible.value = true }
         const save = async () => {
             if (!form.name) return $m('名称必填','error')
             try { isEdit.value ? await api.updateTeachingClass(form.id, form) : await api.addTeachingClass(form); dialogVisible.value = false; load(); $m(isEdit.value?'修改成功':'创建成功') } catch(e) { $m(e.response?.data?.msg||'失败','error') }
@@ -1016,8 +1038,19 @@ const TeacherTeachingClasses = defineComponent({
             try { await api.teachingClassRemoveClass(currentRow.value.id, cid); $m('已移除'); manageClasses(currentRow.value) } catch(e) { $m(e.response?.data?.msg||'失败','error') }
         }
         const viewStudents = async row => {
-            currentRow.value = row; studentsVisible.value = true
+            currentRow.value = row; studentsVisible.value = true; selectedStudentIds.value = []
             try { const r = await api.teachingClassStudents(row.id); students.value = r.data.data } catch(e) { console.error(e) }
+            // 选修教学班：加载全部学生供选择（模拟教务系统选课名单）
+            if (row.courseType === 'ELECTIVE') {
+                try { const r2 = await api.teacherAllStudents({page:1,size:500}); allStudents.value = r2.data.data.records } catch(e) { console.error(e) }
+            }
+        }
+        const addStudents = async () => {
+            if (!selectedStudentIds.value.length) return $m('请选择学生','error')
+            try { await api.teachingClassAddStudents(currentRow.value.id, {studentIds: selectedStudentIds.value}); $m('已加入'); viewStudents(currentRow.value) } catch(e) { $m(e.response?.data?.msg||'失败','error') }
+        }
+        const removeStudent = async row => {
+            try { await api.teachingClassRemoveStudent(currentRow.value.id, row.id); $m('已移出'); viewStudents(currentRow.value) } catch(e) { $m(e.response?.data?.msg||'失败','error') }
         }
         const resetPwds = () => {
             $c(`确定重置该教学班全部 ${students.value.length} 名学生的密码？`).then(async ()=>{
@@ -1036,7 +1069,7 @@ const TeacherTeachingClasses = defineComponent({
             } catch(e) { $m(e.response?.data?.msg||'重置失败','error') }
         }
         onMounted(async () => { load(); try { const r = await api.teacherClasses({page:1,size:100}); allClasses.value = r.data.data.records } catch(e) { console.error(e) } })
-        return { list, dialogVisible, isEdit, form, showAdd, edit, save, del, manageClasses, classesVisible, studentsVisible, currentRow, allClasses, selectedClazzIds, tcClasses, students, addClasses, removeClass, viewStudents, resetPwds, resetOnePwd }
+        return { list, dialogVisible, isEdit, form, showAdd, edit, save, del, manageClasses, classesVisible, studentsVisible, currentRow, allClasses, selectedClazzIds, tcClasses, students, allStudents, selectedStudentIds, addClasses, removeClass, viewStudents, addStudents, removeStudent, resetPwds, resetOnePwd }
     }
 })
 

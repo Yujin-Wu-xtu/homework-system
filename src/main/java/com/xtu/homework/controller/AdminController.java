@@ -576,6 +576,12 @@ public class AdminController {
         if (tc.getTeacherId() == null) {
             return R.badRequest("请指定负责教师");
         }
+        // 课程类型：默认必修（专业课）；选修教学班由教师自由选学生
+        if (tc.getCourseType() == null || tc.getCourseType().isBlank()) {
+            tc.setCourseType("REQUIRED");
+        } else if (!"REQUIRED".equals(tc.getCourseType()) && !"ELECTIVE".equals(tc.getCourseType())) {
+            return R.badRequest("课程类型不合法（REQUIRED/ELECTIVE）");
+        }
         teachingClassDao.insert(tc);
         return R.ok().data(tc);
     }

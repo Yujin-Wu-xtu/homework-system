@@ -11,6 +11,7 @@ import com.xtu.homework.dao.SubmissionAnswerDao;
 import com.xtu.homework.dao.SubmissionDao;
 import com.xtu.homework.dao.TeachingClassClazzDao;
 import com.xtu.homework.dao.TeachingClassDao;
+import com.xtu.homework.dao.TeachingClassStudentDao;
 import com.xtu.homework.dao.UserDao;
 import com.xtu.homework.dto.GradingDto;
 import com.xtu.homework.dto.HomeworkAssignDto;
@@ -46,6 +47,7 @@ public class TeacherController {
     private final QuestionDao questionDao;
     private final TeachingClassDao teachingClassDao;
     private final TeachingClassClazzDao teachingClassClazzDao;
+    private final TeachingClassStudentDao teachingClassStudentDao;
     private final ClazzDao clazzDao;
     private final UserDao userDao;
 
@@ -66,9 +68,9 @@ public class TeacherController {
                 new LambdaQueryWrapper<TeachingClass>()
                         .eq(TeachingClass::getTeacherId, teacherId)
                         .orderByDesc(TeachingClass::getCreateTime));
-        // 附加学生人数（动态计算），供前端"布置作业"过滤空教学班
+        // 附加学生人数（按课程类型分流），供前端"布置作业"过滤空教学班
         for (TeachingClass tc : result.getRecords()) {
-            tc.setStudentCount((int) userDao.countStudentsByTeachingClassId(tc.getId()));
+            tc.setStudentCount((int) userService.countTeachingClassStudents(tc.getId()));
         }
         return R.ok().data(result);
     }
@@ -78,6 +80,12 @@ public class TeacherController {
                               @RequestBody TeachingClass tc) {
         if (tc.getName() == null || tc.getName().isBlank()) {
             return R.badRequest("教学班名称不能为空");
+        }
+        // 课程类型：REQUIRED=必修(专业课，按自然班拉学生) / ELECTIVE=选修(自由选学生)；默认必修
+        if (tc.getCourseType() == null || tc.getCourseType().isBlank()) {
+            tc.setCourseType("REQUIRED");
+        } else if (!"REQUIRED".equals(tc.getCourseType()) && !"ELECTIVE".equals(tc.getCourseType())) {
+            return R.badRequest("课程类型不合法（REQUIRED/ELECTIVE）");
         }
         tc.setTeacherId(teacherId);
         teachingClassDao.insert(tc);
@@ -105,9 +113,11 @@ public class TeacherController {
         if (exist == null || !exist.getTeacherId().equals(teacherId)) {
             return R.badRequest("教学班不存在或无权操作");
         }
-        // 先删除关联，再删教学班（外键约束）
+        // 先删除关联（外键约束）：自然班关联（必修）+ 学生关联（选修）
         teachingClassClazzDao.delete(new LambdaQueryWrapper<TeachingClassClazz>()
                 .eq(TeachingClassClazz::getTeachingClassId, id));
+        teachingClassStudentDao.delete(new LambdaQueryWrapper<TeachingClassStudent>()
+                .eq(TeachingClassStudent::getTeachingClassId, id));
         teachingClassDao.deleteById(id);
         return R.ok("教学班已删除");
     }
@@ -131,6 +141,9 @@ public class TeacherController {
         TeachingClass exist = teachingClassDao.selectById(id);
         if (exist == null || !exist.getTeacherId().equals(teacherId)) {
             return R.badRequest("教学班不存在或无权操作");
+        }
+        if ("ELECTIVE".equals(exist.getCourseType())) {
+            return R.badRequest("选修教学班不支持按自然班级拉取，请从学生列表自由选择");
         }
         // 泛型擦除陷阱：JSON 数字默认解析为 Integer，需经 Number 转 Long
         @SuppressWarnings("unchecked")
@@ -173,7 +186,55 @@ public class TeacherController {
         if (exist == null || !exist.getTeacherId().equals(teacherId)) {
             return R.badRequest("教学班不存在或无权操作");
         }
-        return R.ok().data(userDao.findStudentsByTeachingClassId(id));
+        return R.ok().data(userService.findTeachingClassStudents(id));
+    }
+
+    /** 选修教学班：从全部学生中自由选择加入（模拟教务系统选课后选修课老师拉不同自然班学生） */
+    @PostMapping("/teaching-classes/{id}/students")
+    public R addElectiveStudents(@RequestAttribute("userId") Long teacherId,
+                                 @PathVariable Long id,
+                                 @RequestBody Map<String, Object> body) {
+        TeachingClass exist = teachingClassDao.selectById(id);
+        if (exist == null || !exist.getTeacherId().equals(teacherId)) {
+            return R.badRequest("教学班不存在或无权操作");
+        }
+        @SuppressWarnings("unchecked")
+        List<?> rawIds = body.get("studentIds") instanceof List
+                ? (List<?>) body.get("studentIds") : List.of();
+        List<Long> studentIds = rawIds.stream().map(o -> ((Number) o).longValue()).toList();
+        try {
+            int added = userService.addElectiveStudents(id, studentIds);
+            return R.ok().data(Map.of("added", added));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
+    }
+
+    /** 选修教学班：移除学生（历史提交保留供教师审计，学生端立即不可见/不可提交） */
+    @DeleteMapping("/teaching-classes/{id}/students/{sid}")
+    public R removeElectiveStudent(@RequestAttribute("userId") Long teacherId,
+                                   @PathVariable Long id, @PathVariable Long sid) {
+        TeachingClass exist = teachingClassDao.selectById(id);
+        if (exist == null || !exist.getTeacherId().equals(teacherId)) {
+            return R.badRequest("教学班不存在或无权操作");
+        }
+        userService.removeElectiveStudent(id, sid);
+        return R.ok("已从教学班移除该学生");
+    }
+
+    /** 教师查看全部学生列表（选修教学班选人用；模拟教务系统选课名单，可关键字过滤） */
+    @GetMapping("/students")
+    public R listAllStudents(@RequestParam(defaultValue = "1") int page,
+                             @RequestParam(defaultValue = "100") int size,
+                             @RequestParam(required = false) String keyword) {
+        LambdaQueryWrapper<User> qw = new LambdaQueryWrapper<User>()
+                .eq(User::getRole, "STUDENT")
+                .eq(User::getStatus, "ACTIVE")
+                .orderByAsc(User::getClazzId).orderByAsc(User::getUsername);
+        if (keyword != null && !keyword.isBlank()) {
+            qw.and(w -> w.like(User::getUsername, keyword).or().like(User::getRealName, keyword));
+        }
+        return R.ok().data(userDao.selectPage(new Page<>(page, size), qw));
     }
 
     @PutMapping("/teaching-classes/{id}/reset-student-pwds")
@@ -183,7 +244,7 @@ public class TeacherController {
         if (exist == null || !exist.getTeacherId().equals(teacherId)) {
             return R.badRequest("教学班不存在或无权操作");
         }
-        List<User> students = userDao.findStudentsByTeachingClassId(id);
+        List<User> students = userService.findTeachingClassStudents(id);
         List<Map<String, String>> resets = new ArrayList<>();
         for (User s : students) {
             String newPwd = userService.resetPassword(s.getId());
@@ -201,8 +262,8 @@ public class TeacherController {
         if (exist == null || !exist.getTeacherId().equals(teacherId)) {
             return R.badRequest("教学班不存在或无权操作");
         }
-        // 校验该学生确实属于本教学班（自然班级 ∈ 教学班关联班级）
-        List<User> students = userDao.findStudentsByTeachingClassId(id);
+        // 校验该学生确实属于本教学班（按课程类型分流：必修=自然班动态 / 选修=静态关系）
+        List<User> students = userService.findTeachingClassStudents(id);
         boolean inClass = students.stream().anyMatch(s -> s.getId().equals(sid));
         if (!inClass) {
             return R.badRequest("该学生不在本教学班中，无法重置密码");

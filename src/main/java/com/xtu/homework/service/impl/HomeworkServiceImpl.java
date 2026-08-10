@@ -8,6 +8,7 @@ import com.xtu.homework.dto.HomeworkAssignDto;
 import com.xtu.homework.entity.*;
 import com.xtu.homework.service.HomeworkService;
 import com.xtu.homework.service.StudentHomeworkAccessService;
+import com.xtu.homework.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -36,6 +37,7 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
     private final QuestionDao questionDao;
     private final QuestionOptionDao questionOptionDao;
     private final StudentHomeworkAccessService studentHomeworkAccessService;
+    private final UserService userService;
 
     @Override
     @Transactional
@@ -64,14 +66,14 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
             hwQuestionDao.insert(hq);
         }
 
-        // 3. 为教学班的所有学生初始化提交记录
-        List<User> students = userDao.findStudentsByTeachingClassId(dto.getTeachingClassId());
+        // 3. 为教学班的所有学生初始化提交记录（按课程类型分流：必修=自然班动态 / 选修=静态关系）
+        List<User> students = userService.findTeachingClassStudents(dto.getTeachingClassId());
         if (students.isEmpty()) {
             // 回滚已创建的数据：先删题目关联（外键），再删作业
             hwQuestionDao.delete(new LambdaQueryWrapper<HomeworkQuestion>()
                     .eq(HomeworkQuestion::getHomeworkId, hw.getId()));
             homeworkDao.deleteById(hw.getId());
-            throw new RuntimeException("该教学班尚未包含任何学生（请先在'教学班管理'中拉入自然班级），发布后学生将看不到此作业");
+            throw new RuntimeException("该教学班尚未包含任何学生（请先在'教学班管理'中加入学生），发布后学生将看不到此作业");
         }
         for (User student : students) {
             Submission sub = new Submission();

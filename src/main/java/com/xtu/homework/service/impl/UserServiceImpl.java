@@ -8,12 +8,16 @@ import com.xtu.homework.dao.ClazzDao;
 import com.xtu.homework.dao.HomeworkDao;
 import com.xtu.homework.dao.SubmissionDao;
 import com.xtu.homework.dao.TeachingClassClazzDao;
+import com.xtu.homework.dao.TeachingClassDao;
+import com.xtu.homework.dao.TeachingClassStudentDao;
 import com.xtu.homework.dao.UserDao;
 import com.xtu.homework.entity.AuditLog;
 import com.xtu.homework.entity.Clazz;
 import com.xtu.homework.entity.Homework;
 import com.xtu.homework.entity.Submission;
+import com.xtu.homework.entity.TeachingClass;
 import com.xtu.homework.entity.TeachingClassClazz;
+import com.xtu.homework.entity.TeachingClassStudent;
 import com.xtu.homework.entity.User;
 import com.xtu.homework.service.UserService;
 import com.xtu.homework.service.VerificationCodeService;
@@ -51,6 +55,8 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
     private final AuditLogDao auditLogDao;
     private final ClazzDao clazzDao;
     private final TeachingClassClazzDao teachingClassClazzDao;
+    private final TeachingClassDao teachingClassDao;
+    private final TeachingClassStudentDao teachingClassStudentDao;
     private final HomeworkDao homeworkDao;
     private final SubmissionDao submissionDao;
     private final PasswordEncoder passwordEncoder;
@@ -247,8 +253,16 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
         List<TeachingClassClazz> links = teachingClassClazzDao.selectList(
                 new LambdaQueryWrapper<TeachingClassClazz>().eq(TeachingClassClazz::getClazzId, clazzId));
         if (links.isEmpty()) return;
+        // 只自动同步必修教学班（专业课：学生进自然班即属于该班）；
+        // 选修教学班的学生由教师手动拉入（addElectiveStudents → syncSubmissionForTeachingClass）
         List<Long> tcIds = links.stream()
-                .map(TeachingClassClazz::getTeachingClassId).distinct().toList();
+                .map(TeachingClassClazz::getTeachingClassId).distinct()
+                .filter(tcId -> {
+                    TeachingClass tc = teachingClassDao.selectById(tcId);
+                    return tc == null || !"ELECTIVE".equals(tc.getCourseType());
+                })
+                .toList();
+        if (tcIds.isEmpty()) return;
         List<Homework> hws = homeworkDao.selectList(
                 new LambdaQueryWrapper<Homework>()
                         .in(Homework::getTeachingClassId, tcIds)
@@ -266,6 +280,95 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
                 submissionDao.insert(sub);
             }
         }
+    }
+
+    /** 补学生在指定教学班已发布/已关闭作业的 submission（幂等）——必修(自然班动态)与选修(教师拉入)共用 */
+    private void syncSubmissionForTeachingClass(Long studentId, Long tcId) {
+        List<Homework> hws = homeworkDao.selectList(
+                new LambdaQueryWrapper<Homework>()
+                        .eq(Homework::getTeachingClassId, tcId)
+                        .in(Homework::getStatus, List.of("PUBLISHED", "CLOSED")));
+        for (Homework hw : hws) {
+            Long cnt = submissionDao.selectCount(
+                    new LambdaQueryWrapper<Submission>()
+                            .eq(Submission::getHomeworkId, hw.getId())
+                            .eq(Submission::getStudentId, studentId));
+            if (cnt == null || cnt == 0) {
+                Submission sub = new Submission();
+                sub.setHomeworkId(hw.getId());
+                sub.setStudentId(studentId);
+                sub.setStatus("NOT_SUBMITTED");
+                submissionDao.insert(sub);
+            }
+        }
+    }
+
+    // ========== 教学班学生（按课程类型分流）==========
+
+    @Override
+    public List<User> findTeachingClassStudents(Long tcId) {
+        TeachingClass tc = teachingClassDao.selectById(tcId);
+        if (tc == null) return List.of();
+        if ("ELECTIVE".equals(tc.getCourseType())) {
+            List<Long> sids = teachingClassStudentDao.selectList(
+                            new LambdaQueryWrapper<TeachingClassStudent>()
+                                    .eq(TeachingClassStudent::getTeachingClassId, tcId))
+                    .stream().map(TeachingClassStudent::getStudentId).toList();
+            return sids.isEmpty() ? List.of() : userDao.selectBatchIds(sids);
+        }
+        // 必修：学生的自然班级 ∈ 教学班关联班级（动态查询）
+        return userDao.findStudentsByTeachingClassId(tcId);
+    }
+
+    @Override
+    public long countTeachingClassStudents(Long tcId) {
+        TeachingClass tc = teachingClassDao.selectById(tcId);
+        if (tc == null) return 0;
+        if ("ELECTIVE".equals(tc.getCourseType())) {
+            return teachingClassStudentDao.selectCount(
+                    new LambdaQueryWrapper<TeachingClassStudent>()
+                            .eq(TeachingClassStudent::getTeachingClassId, tcId));
+        }
+        return userDao.countStudentsByTeachingClassId(tcId);
+    }
+
+    @Override
+    @Transactional
+    public int addElectiveStudents(Long tcId, List<Long> studentIds) {
+        TeachingClass tc = teachingClassDao.selectById(tcId);
+        if (tc == null) throw new RuntimeException("教学班不存在");
+        if (!"ELECTIVE".equals(tc.getCourseType())) {
+            throw new RuntimeException("仅选修教学班支持自由选择学生（必修教学班按自然班级拉取）");
+        }
+        int added = 0;
+        for (Long sid : studentIds) {
+            if (sid == null) continue;
+            Long cnt = teachingClassStudentDao.selectCount(new LambdaQueryWrapper<TeachingClassStudent>()
+                    .eq(TeachingClassStudent::getTeachingClassId, tcId)
+                    .eq(TeachingClassStudent::getStudentId, sid));
+            if (cnt == 0) {
+                TeachingClassStudent tcs = new TeachingClassStudent();
+                tcs.setTeachingClassId(tcId);
+                tcs.setStudentId(sid);
+                teachingClassStudentDao.insert(tcs);
+                added++;
+            }
+            // 补该教学班已发布作业 submission → 学生端立即可见（模拟选课后进入课程）
+            syncSubmissionForTeachingClass(sid, tcId);
+        }
+        return added;
+    }
+
+    @Override
+    @Transactional
+    public void removeElectiveStudent(Long tcId, Long studentId) {
+        TeachingClassStudent tcs = teachingClassStudentDao.selectOne(new LambdaQueryWrapper<TeachingClassStudent>()
+                .eq(TeachingClassStudent::getTeachingClassId, tcId)
+                .eq(TeachingClassStudent::getStudentId, studentId));
+        if (tcs != null) {
+            teachingClassStudentDao.deleteById(tcs.getId());
+        }
+        // 历史 submission 保留（教师审计）；学生端访问由 StudentHomeworkAccessService 实时鉴权立即失效
     }
 
     @Override
