@@ -320,7 +320,7 @@ const AdminClasses = defineComponent({
                                 <el-button size="small" type="danger" @click="del(currentClazz.id)">删除班级</el-button>
                             </div>
                         </div>
-                        <el-table :data="students" border stripe v-loading="studentsLoading">
+                        <el-table :data="students" border stripe v-loading="studentsLoading" max-height="460">
                             <el-table-column prop="username" label="学号" width="130"/>
                             <el-table-column prop="realName" label="姓名" width="120"/>
                             <el-table-column prop="phone" label="手机号" width="140"/>
@@ -329,6 +329,9 @@ const AdminClasses = defineComponent({
                                 <template #default="{row}"><el-button size="small" type="danger" @click="removeStudent(row)">删除</el-button></template>
                             </el-table-column>
                         </el-table>
+                        <el-pagination v-if="total > pageSize" :current-page="page" :page-size="pageSize" :total="total"
+                                       layout="total, prev, pager, next, jumper" style="margin-top:12px;justify-content:flex-end"
+                                       @current-change="onPageChange"/>
                     </template>
                     <el-empty v-else description="点击左侧树选择班级查看学生"/>
                 </div>
@@ -371,6 +374,7 @@ const AdminClasses = defineComponent({
     setup() {
         const tree = ref([]), treeKeyword = ref(''), treeRef = ref(null)
         const currentClazz = ref(null), students = ref([]), studentsLoading = ref(false)
+        const page = ref(1), pageSize = ref(10), total = ref(0)
         const dialogVisible = ref(false), editVisible = ref(false), addVisible = ref(false), importVisible = ref(false)
         const form = reactive({name:'',grade:'',college:'',major:''}), editForm = reactive({id:null,name:'',grade:'',college:'',major:''})
         const addForm = reactive({username:'',realName:'',phone:'',email:''})
@@ -379,15 +383,17 @@ const AdminClasses = defineComponent({
         }
         const filterNode = (value, data) => !value || (data.label || '').includes(value)
         const onNodeClick = data => {
-            if (data.clazzId === undefined) { currentClazz.value = null; students.value = []; return }
+            if (data.clazzId === undefined) { currentClazz.value = null; students.value = []; total.value = 0; return }
             currentClazz.value = data
+            page.value = 1
             loadStudents(data.clazzId)
         }
         const loadStudents = async clazzId => {
             studentsLoading.value = true
-            try { const r = await api.classStudents(clazzId, {page:1,size:500}); students.value = r.data.data.records } catch(e) { console.error(e) }
+            try { const r = await api.classStudents(clazzId, {page: page.value, size: pageSize.value}); students.value = r.data.data.records; total.value = r.data.data.total || 0 } catch(e) { console.error(e) }
             finally { studentsLoading.value = false }
         }
+        const onPageChange = p => { page.value = p; loadStudents(currentClazz.value.clazzId) }
         const showAdd = () => { Object.assign(form, {name:'',grade:'',college:'',major:''}); dialogVisible.value = true }
         const save = async () => { try { await api.addClass(form); dialogVisible.value = false; $m('新增成功'); load() } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
         const edit = row => { Object.assign(editForm, {id:row.clazzId, name:row.name, grade:row.grade, college:row.college||'', major:row.major||''}); editVisible.value = true }
@@ -412,7 +418,7 @@ const AdminClasses = defineComponent({
             return false
         }
         onMounted(load)
-        return { tree, treeKeyword, treeRef, filterNode, onNodeClick, currentClazz, students, studentsLoading, dialogVisible, editVisible, addVisible, importVisible, form, editForm, addForm, showAdd, save, edit, saveEdit, del, removeStudent, saveAdd, uploadStudents }
+        return { tree, treeKeyword, treeRef, filterNode, onNodeClick, currentClazz, students, studentsLoading, page, pageSize, total, onPageChange, dialogVisible, editVisible, addVisible, importVisible, form, editForm, addForm, showAdd, save, edit, saveEdit, del, removeStudent, saveAdd, uploadStudents }
     }
 })
 
@@ -423,12 +429,12 @@ const AdminStudents = defineComponent({
             <el-button type="primary" size="small" :disabled="!selectedClazzId" @click="showAdd">新增学生</el-button>
         </h3>
             <el-form :inline="true"><el-form-item label="选择班级">
-                <el-select v-model="selectedClazzId" placeholder="选择班级或全部" @change="loadStudents" size="small" style="width:220px">
+                <el-select v-model="selectedClazzId" placeholder="选择班级或全部" @change="changeClazz" size="small" style="width:220px">
                     <el-option label="全部学生" :value="0"/>
                     <el-option v-for="c in classList" :key="c.id" :label="c.name" :value="c.id"/>
                 </el-select>
             </el-form-item></el-form>
-            <el-table :data="students" border stripe v-loading="loading">
+            <el-table :data="students" border stripe v-loading="loading" max-height="460">
                 <el-table-column prop="username" label="学号" width="140"/>
                 <el-table-column prop="realName" label="姓名" width="120"/>
                 <el-table-column label="班级" width="140">
@@ -448,6 +454,9 @@ const AdminStudents = defineComponent({
                 </el-table-column>
             </el-table>
             <p v-if="!students.length" style="color:#909399">暂无学生{{ selectedClazzId ? '' : '（点击新增或 Excel 导入）' }}</p>
+            <el-pagination v-if="total > pageSize" :current-page="page" :page-size="pageSize" :total="total"
+                           layout="total, prev, pager, next, jumper" style="margin-top:12px;justify-content:flex-end"
+                           @current-change="onPageChange"/>
             <el-dialog title="新增学生" v-model="addVisible" width="460px">
                 <el-form :model="addForm" label-width="80px">
                     <el-form-item label="学号"><el-input v-model="addForm.username" placeholder="必填，如 20240007"/></el-form-item>
@@ -467,6 +476,7 @@ const AdminStudents = defineComponent({
         </div>`,
     setup() {
         const classList = ref([]), selectedClazzId = ref(0), students = ref([]), loading = ref(false)
+        const page = ref(1), pageSize = ref(10), total = ref(0)
         const addVisible = ref(false), addForm = reactive({username:'',realName:'',phone:'',email:''})
         const transferVisible = ref(false), transferRow = ref(null), transferToClazzId = ref(null)
         const clazzName = id => { const c = classList.value.find(x => x.id === id); return c ? c.name : '—' }
@@ -474,13 +484,13 @@ const AdminStudents = defineComponent({
         const loadStudents = async () => {
             loading.value = true
             try {
-                if (selectedClazzId.value) {
-                    const r = await api.classStudents(selectedClazzId.value, {page:1,size:200}); students.value = r.data.data.records
-                } else {
-                    const r = await api.allStudents({page:1,size:500}); students.value = r.data.data.records
-                }
+                const p = {page: page.value, size: pageSize.value}
+                const r = selectedClazzId.value ? await api.classStudents(selectedClazzId.value, p) : await api.allStudents(p)
+                students.value = r.data.data.records; total.value = r.data.data.total || 0
             } catch(e) { console.error(e) } finally { loading.value = false }
         }
+        const changeClazz = () => { page.value = 1; loadStudents() }
+        const onPageChange = p => { page.value = p; loadStudents() }
         const resetPwd = async id => { try { const r = await api.resetStudentPwd(id); $m('新密码：'+r.data.data?.newPassword) } catch(e) { console.error(e) } }
         const showAdd = () => { Object.assign(addForm, {username:'',realName:'',phone:'',email:''}); addVisible.value = true }
         const saveAdd = async () => {
@@ -491,8 +501,8 @@ const AdminStudents = defineComponent({
         const doTransfer = async () => {
             try { await api.transferStudent(selectedClazzId.value, transferRow.value.id, {toClazzId: transferToClazzId.value}); transferVisible.value = false; loadStudents(); $m('转班成功') } catch(e) { $m(e.response?.data?.msg||'转班失败','error') }
         }
-        const del = row => { $c(`确定删除学生 ${row.realName}（${row.username}）？删除后账号将被禁用`).then(async ()=>{ await api.deleteStudent(row.id); loadStudents(); $m('已删除') }).catch(()=>{}) }
-        return { classList, selectedClazzId, students, loading, clazzName, loadStudents, resetPwd, addVisible, addForm, showAdd, saveAdd, transferVisible, transferRow, transferToClazzId, showTransfer, doTransfer, del }
+        const del = row => { $c(`确定删除学生 ${row.realName}（${row.username}）？删除后账号将被禁用`).then(async ()=>{ await api.deleteStudent(row.id); if (students.value.length === 1 && page.value > 1) page.value--; loadStudents(); $m('已删除') }).catch(()=>{}) }
+        return { classList, selectedClazzId, students, loading, page, pageSize, total, clazzName, changeClazz, onPageChange, loadStudents, resetPwd, addVisible, addForm, showAdd, saveAdd, transferVisible, transferRow, transferToClazzId, showTransfer, doTransfer, del }
     }
 })
 
