@@ -209,6 +209,9 @@ public class AdminController {
 
     @DeleteMapping("/classes/{id}")
     public R deleteClass(@PathVariable Long id) {
+        if (id == null) {
+            return R.badRequest("班级不存在");
+        }
         long studentCount = userDao.selectCount(
                 new LambdaQueryWrapper<User>()
                         .eq(User::getClazzId, id)

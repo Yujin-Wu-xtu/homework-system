@@ -381,7 +381,7 @@ const AdminClasses = defineComponent({
                                 <el-button size="small" type="success" @click="importVisible=true">导入学生Excel</el-button>
                                 <el-button size="small" @click="addVisible=true">新增学生</el-button>
                                 <el-button size="small" @click="edit(currentClazz)">编辑班级</el-button>
-                                <el-button size="small" type="danger" @click="del(currentClazz.id)">删除班级</el-button>
+                                <el-button size="small" type="danger" @click="del(currentClazz.clazzId)">删除班级</el-button>
                             </div>
                         </div>
                         <el-table :data="students" border stripe v-loading="studentsLoading" max-height="460">
