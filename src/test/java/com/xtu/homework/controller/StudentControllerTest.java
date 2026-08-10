@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.*;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,10 +22,20 @@ class StudentControllerTest extends BaseControllerTest {
     private static Long clazz2OnlyHwId;     // 仅关联自然班2的作业（学生20240001不可见）
     private static Long clazz2OnlyTcId;
     private static Long expiredHwId;        // 已过截止时间的作业
+    private static Long appQuestionId;      // 应用题（富文本题干，学生端富文本作答闭环）
 
     @Test
     @Order(1)
     void testPrepareHomeworks() throws Exception {
+        // 创建应用题（富文本题干）——学生端富文本作答闭环用
+        MvcResult app = postJson("/api/admin/questions", Map.of(
+                "type", "APPLICATION",
+                "content", "<p>请分析快速排序的时间复杂度，并写出核心代码</p>",
+                "referenceAnswer", "<p>平均 O(n log n)</p>",
+                "score", 10, "difficulty", "MEDIUM"), adminToken());
+        assertOk(app);
+        appQuestionId = body(app).path("data").path("id").asLong();
+
         // 教师布置作业到教学班 1（关联自然班 1、2，共 6 名学生）
         MvcResult r = postJson("/api/teacher/homeworks", homeworkBody(TEACHING_CLASS_1, "TEST-学生端作业", "2027-12-31T23:59:59"), teacherToken());
         assertOk(r);
@@ -86,24 +97,30 @@ class StudentControllerTest extends BaseControllerTest {
     @Test
     @Order(4)
     void testSubmitHomework() throws Exception {
+        // 应用题答案提交富文本 HTML（学生端 wangeditor getHtml 产物，含代码块）
+        String richHtml = "<p>快速排序平均时间复杂度 O(n log n)，最坏 O(n²)。</p><pre><code class=\"language-java\">void quickSort(int[] a,int l,int r){if(l&gt;=r)return;int p=partition(a,l,r);quickSort(a,l,p-1);quickSort(a,p+1,r);}</code></pre>";
         MvcResult r = postJson("/api/student/homeworks/" + homeworkId + "/submit",
                 Map.of("answers", List.of(
                         Map.of("questionId", 1, "answer", "C"),
-                        Map.of("questionId", 5, "answer", "栈后进先出，队列先进先出"))),
+                        Map.of("questionId", 5, "answer", "栈后进先出，队列先进先出"),
+                        Map.of("questionId", appQuestionId, "answer", richHtml))),
                 studentToken());
         assertOk(r);
         JsonNode data = body(r).path("data");
         assertEquals("SUBMITTED", data.path("status").asText());
-        assertEquals(5, data.path("autoScore").asInt(), "客观题 C 正确应得 5 分");
+        assertEquals(5, data.path("autoScore").asInt(), "客观题 C 正确应得 5 分（应用题主观题不自动判分）");
     }
 
     @Test
     @Order(5)
     void testModifyAnswerBeforeDeadline() throws Exception {
+        // 修改提交必须带全部题目答案（submit 是删旧插新，漏题会抹掉该题已提交答案）
+        String modifiedRich = "<p>修改后的应用题答案：快速排序平均 O(n log n)。</p>";
         MvcResult r = postJson("/api/student/homeworks/" + homeworkId + "/submit",
                 Map.of("answers", List.of(
                         Map.of("questionId", 1, "answer", "C"),
-                        Map.of("questionId", 5, "answer", "修改后的主观题答案"))),
+                        Map.of("questionId", 5, "answer", "修改后的主观题答案"),
+                        Map.of("questionId", appQuestionId, "answer", modifiedRich))),
                 studentToken());
         assertOk(r);
         assertEquals("SUBMITTED", body(r).path("data").path("status").asText(),
@@ -115,7 +132,19 @@ class StudentControllerTest extends BaseControllerTest {
     void testGetResultAfterSubmit() throws Exception {
         MvcResult r = get("/api/student/homeworks/" + homeworkId + "/result", studentToken());
         assertOk(r);
-        assertTrue(body(r).path("data").path("answers").size() >= 2, "结果应包含答案明细");
+        JsonNode answers = body(r).path("data").path("answers");
+        assertTrue(answers.size() >= 3, "结果应包含答案明细（单选+问答题+应用题）");
+        boolean appChecked = false, typeFilled = false;
+        for (JsonNode a : answers) {
+            if (a.path("questionType").asText().length() > 0) typeFilled = true;
+            if ("APPLICATION".equals(a.path("questionType").asText())) {
+                appChecked = true;
+                assertTrue(a.path("studentAnswer").asText().contains("<p>"),
+                        "应用题富文本答案应原样返回（供前端 v-html 渲染），实际: " + a.path("studentAnswer").asText().substring(0, Math.min(60, a.path("studentAnswer").asText().length())));
+            }
+        }
+        assertTrue(typeFilled, "结果答案明细应带 questionType（前端按题型区分渲染）");
+        assertTrue(appChecked, "结果应包含应用题答案明细");
     }
 
     /** SEC：学生不能访问/提交不属于当前教学班的作业（自然班 1 学生访问仅含自然班 2 的作业） */
@@ -157,15 +186,44 @@ class StudentControllerTest extends BaseControllerTest {
         assertEquals(401, httpStatus(r));
     }
 
+    /** 学生端富文本适配：作业详情应回显已提交答案（修改答案时编辑器/表单按此初始化） */
+    @Test
+    @Order(11)
+    void testGetHomeworkDetailEchoesAnswer() throws Exception {
+        MvcResult r = get("/api/student/homeworks/" + homeworkId, studentToken());
+        assertOk(r);
+        JsonNode questions = body(r).path("data").path("questions");
+        assertTrue(questions.size() >= 3);
+        boolean appEchoed = false, essayEchoed = false;
+        for (JsonNode q : questions) {
+            String type = q.path("type").asText();
+            if ("APPLICATION".equals(type)) {
+                appEchoed = true;
+                assertTrue(q.path("answer").asText().contains("<p>"),
+                        "应用题修改回显应返回富文本答案，实际: " + q.path("answer").asText());
+            }
+            if ("ESSAY".equals(type)) {
+                essayEchoed = true;
+                assertEquals("修改后的主观题答案", q.path("answer").asText(), "问答题修改回显最近提交的答案");
+            }
+        }
+        assertTrue(appEchoed, "详情应含应用题（answer 字段回显）");
+        assertTrue(essayEchoed, "详情应含问答题（answer 字段回显）");
+    }
+
     private Map<String, Object> homeworkBody(Long tcId, String title, String deadline) {
         Map<String, Object> body = new HashMap<>();
         body.put("title", title);
         body.put("description", "学生端集成测试作业");
         body.put("teachingClassId", tcId);
         body.put("deadline", deadline);
-        body.put("questions", List.of(
-                Map.of("questionId", 1, "sortOrder", 1, "score", 5),
-                Map.of("questionId", 5, "sortOrder", 2, "score", 15)));
+        List<Map<String, Object>> questions = new ArrayList<>();
+        questions.add(Map.of("questionId", 1, "sortOrder", 1, "score", 5));
+        questions.add(Map.of("questionId", 5, "sortOrder", 2, "score", 15));
+        if (appQuestionId != null) {
+            questions.add(Map.of("questionId", appQuestionId, "sortOrder", 3, "score", 20));
+        }
+        body.put("questions", questions);
         return body;
     }
 }

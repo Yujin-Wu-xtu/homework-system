@@ -29,6 +29,14 @@
         .w-e-select-list{top:100% !important;left:0 !important;margin-top:4px !important;max-height:280px}
         /* 题干富文本容器内的图片自适应（wangeditor 插入的 img style 会被清空，防大图溢出） */
         .q-content img{max-width:100%;height:auto}
+        /* 学生答案富文本容器（渲染学生提交的 HTML 答案，同样防大图溢出） */
+        .ans-content img{max-width:100%;height:auto}
+        .ans-content pre{background:#282c34;color:#abb2bf;padding:12px;border-radius:6px;overflow-x:auto;font-size:13px}
+        .ans-content code{font-family:'Consolas','Courier New',monospace}
+        .ans-content p{margin:4px 0}
+        /* 学生端富文本作答编辑器容器（应用题）：固定高度 + 边框，与管理员端同款防塌陷 */
+        .ans-editor-box{width:100%;border:1px solid #dcdfe6;border-radius:4px;overflow:hidden}
+        .ans-editor-box .ans-editor{height:220px;overflow-y:auto}
         .login-container{display:flex;justify-content:center;align-items:center;min-height:100vh;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)}
         .login-card{width:420px;padding:40px;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
         .login-card h1{text-align:center;margin-bottom:30px;color:#303133;font-size:24px}
@@ -1062,7 +1070,7 @@ const TeacherHomeworks = defineComponent({
             <el-dialog title="学生答案" v-model="answerVisible" width="700px">
                 <div v-for="(a,i) in answers" :key="i" style="margin-bottom:12px;padding:8px;background:#f5f7fa;border-radius:4px">
                     <p><b>题目{{i+1}}:</b> <el-tag size="small">{{TYPE_MAP[a.questionType]||'未知'}}</el-tag></p>
-                    <p><b>学生答案:</b> {{a.studentAnswer||'(未作答)'}}</p>
+                    <p><b>学生答案:</b> <span v-if="a.questionType==='APPLICATION'&&a.studentAnswer" class="ans-content" v-html="safeHtml(a.studentAnswer)"></span><span v-else>{{a.studentAnswer||'(未作答)'}}</span></p>
                     <p v-if="a.score!==null"><b>得分:</b> {{a.score}} <span v-if="a.comment" style="color:#909399">| 评语: {{a.comment}}</span></p>
                     <div v-if="isSubjective(a.questionType)&&a.score===null" style="margin-top:4px">
                         <el-input-number v-model="a._score" :min="0" :max="100" size="small" placeholder="分数"/>
@@ -1085,6 +1093,9 @@ const TeacherHomeworks = defineComponent({
                 const r = await axios.get('/api/teacher/homeworks/' + currentHwId.value + '/submissions/' + row.submissionId + '/answers')
                 answers.value = (r.data.data||[]).map(a => ({...a, _score: a.score, _comment: a.comment||''}))
             } catch(e) { console.error(e) }
+            // 应用题富文本答案渲染（代码高亮等）
+            await nextTick()
+            document.querySelectorAll('.ans-content').forEach(renderRich)
         }
         const doGrade = async a => { try { await api.gradeAnswer(currentHwId.value, a.id, {score: a._score, comment: a._comment}); a.score = a._score; a.comment = a._comment; $m('评分成功') } catch(e) { $m('评分失败','error') } }
         const downloadGrades = async id => { try { const r = await api.exportGrades(id); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([r.data])); a.download = 'grades.xlsx'; a.click() } catch(e) { console.error(e) } }
@@ -1212,7 +1223,7 @@ const TeacherGrading = defineComponent({
             <el-dialog title="批改" v-model="gradeVisible" width="700px">
                 <div v-for="(a,i) in answers" :key="i" style="margin-bottom:16px;padding:12px;background:#f5f7fa;border-radius:4px">
                     <p style="font-weight:bold">题目{{i+1}} <el-tag size="small">{{TYPE_MAP[a.questionType]||'未知'}}</el-tag></p>
-                    <p style="color:#606266">答案: {{a.studentAnswer||'(未作答)'}}</p>
+                    <p style="color:#606266">答案: <span v-if="a.questionType==='APPLICATION'&&a.studentAnswer" class="ans-content" v-html="safeHtml(a.studentAnswer)"></span><span v-else>{{a.studentAnswer||'(未作答)'}}</span></p>
                     <div style="margin-top:8px">
                         <el-input-number v-model="a._score" :min="0" :max="100" size="small" placeholder="得分"/>
                         <el-input v-model="a._comment" placeholder="评语" size="small" style="width:200px;margin-left:8px"/>
@@ -1237,6 +1248,9 @@ const TeacherGrading = defineComponent({
                 const r = await axios.get(`/api/teacher/homeworks/${selectedHwId.value}/submissions/${row.submissionId}/answers`)
                 answers.value = (r.data.data||[]).map(a => ({...a, _score: a.score, _comment: a.comment||''}))
             } catch(e) { console.error(e) }
+            // 应用题富文本答案渲染（代码高亮等）
+            await nextTick()
+            document.querySelectorAll('.ans-content').forEach(renderRich)
         }
         const saveGrade = async a => { try { await api.gradeAnswer(selectedHwId.value, a.id, {score: a._score, comment: a._comment}); a.score = a._score; a.comment = a._comment; $m('评分已保存') } catch(e) { $m('失败','error') } }
         return { hwList, selectedHwId, submissions, answers, gradeVisible, filterStatus, pageNum, pageSize, total, formatD, loadSubmissions, hwChanged, filterChanged, changePage, changeSize, openGrading, saveGrade, TYPE_MAP, isSubjective }
@@ -1294,13 +1308,17 @@ const StudentHomeworks = defineComponent({
                             <el-radio value="错">错</el-radio>
                         </el-radio-group>
                     </template>
-                    <!-- 主观题（问答题/应用题） -->
+                    <!-- 主观题：问答题纯文本 / 应用题富文本编辑器（公式/代码块/排版，图片上传仅管理员有权限故不提供） -->
                     <template v-if="isSubjective(q.type)">
-                        <el-input v-model="answers[i]" type="textarea" :rows="4" placeholder="请输入你的答案..."/>
+                        <el-input v-if="q.type==='ESSAY'" v-model="answers[i]" type="textarea" :rows="4" placeholder="请输入你的答案..."/>
+                        <div v-else class="ans-editor-box">
+                            <div :ref="setAnsToolbarRef(i)"></div>
+                            <div :ref="setAnsEditorRef(i)" class="ans-editor"></div>
+                        </div>
                     </template>
                 </div>
                 <el-button type="primary" size="large" @click="doSubmit" :loading="submitting" :disabled="!canSubmit">提交作业</el-button>
-                <el-button size="large" @click="viewingHw=false;viewingResult=false;answers=[]">返回列表</el-button>
+                <el-button size="large" @click="backToList">返回列表</el-button>
             </div>
 
             <!-- 查看结果 -->
@@ -1309,7 +1327,10 @@ const StudentHomeworks = defineComponent({
                 <p style="color:#909399;margin-bottom:8px">总分: {{result?.submission?.totalScore||0}} | 客观题: {{result?.submission?.autoScore||0}} | 主观题: {{result?.submission?.manualScore||0}}</p>
                 <el-divider/>
                 <div v-for="(a,i) in (result?.answers||[])" :key="i" style="margin-bottom:12px;padding:12px;background:#fafafa;border-radius:6px">
-                    <p><b>{{i+1}}.</b> 你的答案: <span :style="{color: a.score>0?'#67c23a':'#f56c6c'}">{{a.studentAnswer||'(未作答)'}}</span></p>
+                    <p><b>{{i+1}}.</b> 你的答案:
+                        <span v-if="a.questionType==='APPLICATION'&&a.studentAnswer" class="ans-content" v-html="safeHtml(a.studentAnswer)"></span>
+                        <span v-else :style="{color: a.score>0?'#67c23a':'#f56c6c'}">{{a.studentAnswer||'(未作答)'}}</span>
+                    </p>
                     <p>得分: {{a.score||0}} <span v-if="a.comment" style="color:#909399">| 评语: {{a.comment}}</span></p>
                 </div>
                 <el-button size="large" @click="viewingResult=false;viewingHw=false">返回列表</el-button>
@@ -1327,29 +1348,75 @@ const StudentHomeworks = defineComponent({
         })
         const openHw = async row => {
             viewingHw.value = true; viewingResult.value = false; currentHw.value = row
-            try { const r = await api.studentHomeworkDetail(row.id); questions.value = r.data.data.questions||[]; answers.value = new Array(questions.value.length).fill('') } catch(e) { $m('加载失败','error') }
+            destroyAnswerEditors()
+            try {
+                const r = await api.studentHomeworkDetail(row.id)
+                questions.value = r.data.data.questions||[]
+                // 回显已提交答案（修改场景；detail 每道题带 answer 字段，多选拆回数组）
+                answers.value = questions.value.map(q => {
+                    if (q.type === 'MULTI_CHOICE' && q.answer) return q.answer.split('')
+                    return q.answer ?? ''
+                })
+            } catch(e) { $m('加载失败','error') }
             // 题干富文本渲染（v-html 注入后扫描 ECharts 图表/代码高亮）
             await nextTick()
             document.querySelectorAll('.q-content').forEach(renderRich)
+            // 应用题富文本作答编辑器（v-if 渲染完成后初始化，每道应用题一个实例）
+            initAnswerEditors()
         }
         const viewResult = async row => {
             viewingResult.value = true; viewingHw.value = false; currentHw.value = row
             try { const r = await api.homeworkResult(row.id); result.value = r.data.data } catch(e) { $m('加载失败','error') }
+            // 应用题富文本答案渲染（代码高亮等）
+            await nextTick()
+            document.querySelectorAll('.ans-content').forEach(renderRich)
         }
+        const backToList = () => { destroyAnswerEditors(); viewingHw.value = false; viewingResult.value = false; answers.value = [] }
         const canSubmit = computed(() => currentHw.value && questions.value.length > 0)
+        // ========== 应用题富文本作答编辑器（wangeditor 5，每道应用题一个实例）==========
+        // 学生无图片上传权限：工具栏去掉图片/视频/链接/全屏，保留公式/代码块/排版/列表
+        let answerEditors = {}
+        const ansToolbarEls = {}, ansEditorEls = {}
+        const setAnsToolbarRef = i => el => { if (el) ansToolbarEls[i] = el }
+        const setAnsEditorRef = i => el => { if (el) ansEditorEls[i] = el }
+        const initAnswerEditors = () => {
+            if (!window.wangEditor) return
+            questions.value.forEach((q, i) => {
+                if (q.type !== 'APPLICATION') return
+                destroyAnswerEditor(i)
+                if (!ansEditorEls[i]) return
+                try {
+                    const ed = window.wangEditor.createEditor({
+                        selector: ansEditorEls[i],
+                        html: answers.value[i] || '',
+                        config: { placeholder: '请输入你的答案（支持公式 / 代码块 / 排版）...' }
+                    })
+                    window.wangEditor.createToolbar({
+                        editor: ed, selector: ansToolbarEls[i],
+                        config: { excludeKeys: ['fullScreen','group-video','insertVideo','group-image','insertImage','uploadImage','insertLink','todo'] }
+                    })
+                    answerEditors[i] = ed
+                } catch(e) { console.error('答案编辑器初始化失败:', e) }
+            })
+        }
+        const destroyAnswerEditor = i => { try { if (answerEditors[i]) { answerEditors[i].destroy(); delete answerEditors[i] } } catch(e){} }
+        const destroyAnswerEditors = () => Object.keys(answerEditors).forEach(i => destroyAnswerEditor(i))
+        // 提交前把编辑器内容同步进 answers（wangeditor 内容在 slate 模型里，不随 answers 数组实时更新）
+        const syncAnswerEditors = () => Object.keys(answerEditors).forEach(i => { answers.value[Number(i)] = answerEditors[i].getHtml() })
         const doSubmit = async () => {
+            syncAnswerEditors()
             // homeworkId 必须随 body 提交：SubmissionDto 的 @NotNull 校验先于 Controller 内 setHomeworkId 执行，
             // 不传会 400"提交失败"（@Valid 在进入方法体前完成校验）
             const d = { homeworkId: currentHw.value.id, answers: questions.value.map((q,i) => ({questionId: q.id, answer: Array.isArray(answers.value[i]) ? answers.value[i].join('') : (answers.value[i]||'')})) }
             submitting.value = true
-            try { await api.submitHomework(currentHw.value.id, d); $m('提交成功'); viewingHw.value = false; load() } catch(e) { $m(e.response?.data?.msg||'提交失败','error') }
+            try { await api.submitHomework(currentHw.value.id, d); $m('提交成功'); destroyAnswerEditors(); viewingHw.value = false; load() } catch(e) { $m(e.response?.data?.msg||'提交失败','error') }
             finally { submitting.value = false }
         }
         const formatD = d => d ? d.substring(0,16) : ''
         const statusTag = s => ({NOT_SUBMITTED:'info',SUBMITTED:'warning',GRADED:'success',CLOSED:'info'}[s]||'')
         const statusLabel = s => ({NOT_SUBMITTED:'未提交',SUBMITTED:'已提交',GRADED:'已批改',CLOSED:'已关闭'}[s]||s)
         onMounted(load)
-        return { list, tab, loading, viewingHw, viewingResult, currentHw, questions, answers, submitting, result, filteredList, load, openHw, viewResult, canSubmit, doSubmit, formatD, statusTag, statusLabel, TYPE_MAP, safeHtml, isSubjective }
+        return { list, tab, loading, viewingHw, viewingResult, currentHw, questions, answers, submitting, result, filteredList, load, openHw, viewResult, backToList, canSubmit, doSubmit, setAnsToolbarRef, setAnsEditorRef, formatD, statusTag, statusLabel, TYPE_MAP, safeHtml, isSubjective }
     }
 })
 

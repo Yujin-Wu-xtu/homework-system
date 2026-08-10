@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.xtu.homework.common.R;
 import com.xtu.homework.dao.SubmissionAnswerDao;
 import com.xtu.homework.dao.SubmissionDao;
+import com.xtu.homework.dao.QuestionDao;
 import com.xtu.homework.dto.SubmissionDto;
 import com.xtu.homework.entity.Submission;
 import com.xtu.homework.entity.SubmissionAnswer;
+import com.xtu.homework.entity.Question;
 import com.xtu.homework.service.HomeworkService;
 import com.xtu.homework.service.SubmissionService;
 import com.xtu.homework.service.StudentHomeworkAccessService;
@@ -27,6 +29,7 @@ public class StudentController {
     private final SubmissionService submissionService;
     private final SubmissionDao submissionDao;
     private final SubmissionAnswerDao submissionAnswerDao;
+    private final QuestionDao questionDao;
     private final StudentHomeworkAccessService studentHomeworkAccessService;
 
     @GetMapping("/homeworks")
@@ -76,6 +79,11 @@ public class StudentController {
         List<SubmissionAnswer> answers = submissionAnswerDao.selectList(
                 new LambdaQueryWrapper<SubmissionAnswer>()
                         .eq(SubmissionAnswer::getSubmissionId, sub.getId()));
+        // 填充题型供前端区分渲染（应用题富文本答案 vs 问答题纯文本，与教师端 getSubmissionAnswers 同模式）
+        for (SubmissionAnswer a : answers) {
+            Question q = questionDao.selectById(a.getQuestionId());
+            if (q != null) a.setQuestionType(q.getType());
+        }
 
         Map<String, Object> result = new HashMap<>();
         result.put("submission", sub);

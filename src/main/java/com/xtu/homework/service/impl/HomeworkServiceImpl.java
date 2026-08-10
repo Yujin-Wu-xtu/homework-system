@@ -234,6 +234,18 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
                         .eq(Submission::getHomeworkId, homeworkId)
                         .eq(Submission::getStudentId, studentId));
 
+        // 学生已提交答案（修改答案回显：前端富文本编辑器按此初始化）
+        Map<Long, String> answerMap = new HashMap<>();
+        if (sub != null) {
+            submissionAnswerDao.selectList(
+                            new LambdaQueryWrapper<SubmissionAnswer>()
+                                    .eq(SubmissionAnswer::getSubmissionId, sub.getId()))
+                    .forEach(a -> answerMap.put(a.getQuestionId(), a.getStudentAnswer()));
+        }
+        for (Map<String, Object> qm : questions) {
+            qm.put("answer", answerMap.getOrDefault(((Number) qm.get("id")).longValue(), ""));
+        }
+
         Map<String, Object> result = new HashMap<>();
         result.put("homework", hw);
         result.put("questions", questions);
