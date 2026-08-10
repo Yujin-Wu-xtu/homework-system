@@ -244,9 +244,9 @@ const AdminDashboard = defineComponent({
 const AdminTeachers = defineComponent({
     template: `
         <div class="section-card"><h3>教师管理 <el-button type="primary" size="small" @click="showAdd">新增教师</el-button></h3>
-            <el-input v-model="keyword" placeholder="搜索姓名/工号" size="small" style="width:240px;margin-right:8px" clearable @clear="load"/>
-            <el-button size="small" @click="load">搜索</el-button>
-            <el-table :data="list" style="margin-top:12px" border stripe>
+            <el-input v-model="keyword" placeholder="搜索姓名/工号" size="small" style="width:240px;margin-right:8px" clearable @clear="search"/>
+            <el-button size="small" @click="search">搜索</el-button>
+            <el-table :data="list" style="margin-top:12px" border stripe max-height="460">
                 <el-table-column prop="id" label="ID" width="60"/>
                 <el-table-column prop="username" label="工号" width="120"/>
                 <el-table-column prop="realName" label="姓名" width="100"/>
@@ -263,6 +263,10 @@ const AdminTeachers = defineComponent({
                     </template>
                 </el-table-column>
             </el-table>
+            <el-pagination v-if="total > pageSize" :current-page="page" :page-size="pageSize" :total="total"
+                           :page-sizes="[10, 50, 100]" layout="total, sizes, prev, pager, next, jumper"
+                           style="margin-top:12px;justify-content:flex-end"
+                           @current-change="onPageChange" @size-change="onSizeChange"/>
             <el-dialog :title="dialogTitle" v-model="dialogVisible" width="460px">
                 <el-form :model="form" label-width="80px">
                     <el-form-item label="工号"><el-input v-model="form.username"/></el-form-item>
@@ -275,15 +279,19 @@ const AdminTeachers = defineComponent({
         </div>`,
     setup() {
         const list = ref([]), keyword = ref(''), dialogVisible = ref(false), isEdit = ref(false), form = reactive({username:'',realName:'',phone:'',email:''})
+        const page = ref(1), pageSize = ref(10), total = ref(0)
         const dialogTitle = computed(() => isEdit.value?'编辑教师':'新增教师')
-        const load = async () => { try { const r = await api.teachers({page:1,size:100,keyword:keyword.value}); list.value = r.data.data.records } catch(e) { console.error(e) } }
+        const load = async () => { try { const r = await api.teachers({page: page.value, size: pageSize.value, keyword: keyword.value}); list.value = r.data.data.records; total.value = r.data.data.total || 0 } catch(e) { console.error(e) } }
+        const search = () => { page.value = 1; load() }
+        const onPageChange = p => { page.value = p; load() }
+        const onSizeChange = s => { pageSize.value = s; page.value = 1; load() }
         const showAdd = () => { Object.assign(form, {username:'',realName:'',phone:'',email:''}); isEdit.value = false; dialogVisible.value = true }
         const edit = row => { Object.assign(form, row); isEdit.value = true; dialogVisible.value = true }
         const save = async () => { try { isEdit.value ? await api.updateTeacher(form.id, form) : await api.addTeacher(form); dialogVisible.value = false; load(); $m(isEdit.value?'修改成功':'新增成功，初始密码 Admin123456，首次登录需修改') } catch(e) { $m(e.response?.data?.msg||'操作失败','error') } }
-        const del = id => { $c('确定删除该教师？').then(async ()=>{ await api.deleteTeacher(id); load(); $m('已删除') }).catch(()=>{}) }
+        const del = id => { $c('确定删除该教师？').then(async ()=>{ await api.deleteTeacher(id); if (list.value.length === 1 && page.value > 1) page.value--; load(); $m('已删除') }).catch(()=>{}) }
         const resetPwd = async id => { try { const r = await api.resetTeacherPwd(id); $m('新密码：'+r.data.data?.newPassword) } catch(e) { console.error(e) } }
         onMounted(load)
-        return { list, keyword, dialogVisible, dialogTitle, form, showAdd, edit, save, del, resetPwd, load }
+        return { list, keyword, dialogVisible, dialogTitle, form, page, pageSize, total, showAdd, edit, save, del, resetPwd, load, search, onPageChange, onSizeChange }
     }
 })
 
@@ -330,8 +338,8 @@ const AdminClasses = defineComponent({
                             </el-table-column>
                         </el-table>
                         <el-pagination v-if="total > pageSize" :current-page="page" :page-size="pageSize" :total="total"
-                                       layout="total, prev, pager, next, jumper" style="margin-top:12px;justify-content:flex-end"
-                                       @current-change="onPageChange"/>
+                                       :page-sizes="[10, 50, 100]" layout="total, sizes, prev, pager, next, jumper" style="margin-top:12px;justify-content:flex-end"
+                                       @current-change="onPageChange" @size-change="onSizeChange"/>
                     </template>
                     <el-empty v-else description="点击左侧树选择班级查看学生"/>
                 </div>
@@ -394,6 +402,7 @@ const AdminClasses = defineComponent({
             finally { studentsLoading.value = false }
         }
         const onPageChange = p => { page.value = p; loadStudents(currentClazz.value.clazzId) }
+        const onSizeChange = s => { pageSize.value = s; page.value = 1; loadStudents(currentClazz.value.clazzId) }
         const showAdd = () => { Object.assign(form, {name:'',grade:'',college:'',major:''}); dialogVisible.value = true }
         const save = async () => { try { await api.addClass(form); dialogVisible.value = false; $m('新增成功'); load() } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
         const edit = row => { Object.assign(editForm, {id:row.clazzId, name:row.name, grade:row.grade, college:row.college||'', major:row.major||''}); editVisible.value = true }
@@ -418,7 +427,7 @@ const AdminClasses = defineComponent({
             return false
         }
         onMounted(load)
-        return { tree, treeKeyword, treeRef, filterNode, onNodeClick, currentClazz, students, studentsLoading, page, pageSize, total, onPageChange, dialogVisible, editVisible, addVisible, importVisible, form, editForm, addForm, showAdd, save, edit, saveEdit, del, removeStudent, saveAdd, uploadStudents }
+        return { tree, treeKeyword, treeRef, filterNode, onNodeClick, currentClazz, students, studentsLoading, page, pageSize, total, onPageChange, onSizeChange, dialogVisible, editVisible, addVisible, importVisible, form, editForm, addForm, showAdd, save, edit, saveEdit, del, removeStudent, saveAdd, uploadStudents }
     }
 })
 
@@ -455,8 +464,8 @@ const AdminStudents = defineComponent({
             </el-table>
             <p v-if="!students.length" style="color:#909399">暂无学生{{ selectedClazzId ? '' : '（点击新增或 Excel 导入）' }}</p>
             <el-pagination v-if="total > pageSize" :current-page="page" :page-size="pageSize" :total="total"
-                           layout="total, prev, pager, next, jumper" style="margin-top:12px;justify-content:flex-end"
-                           @current-change="onPageChange"/>
+                           :page-sizes="[10, 50, 100]" layout="total, sizes, prev, pager, next, jumper" style="margin-top:12px;justify-content:flex-end"
+                           @current-change="onPageChange" @size-change="onSizeChange"/>
             <el-dialog title="新增学生" v-model="addVisible" width="460px">
                 <el-form :model="addForm" label-width="80px">
                     <el-form-item label="学号"><el-input v-model="addForm.username" placeholder="必填，如 20240007"/></el-form-item>
@@ -491,6 +500,7 @@ const AdminStudents = defineComponent({
         }
         const changeClazz = () => { page.value = 1; loadStudents() }
         const onPageChange = p => { page.value = p; loadStudents() }
+        const onSizeChange = s => { pageSize.value = s; page.value = 1; loadStudents() }
         const resetPwd = async id => { try { const r = await api.resetStudentPwd(id); $m('新密码：'+r.data.data?.newPassword) } catch(e) { console.error(e) } }
         const showAdd = () => { Object.assign(addForm, {username:'',realName:'',phone:'',email:''}); addVisible.value = true }
         const saveAdd = async () => {
@@ -502,7 +512,7 @@ const AdminStudents = defineComponent({
             try { await api.transferStudent(selectedClazzId.value, transferRow.value.id, {toClazzId: transferToClazzId.value}); transferVisible.value = false; loadStudents(); $m('转班成功') } catch(e) { $m(e.response?.data?.msg||'转班失败','error') }
         }
         const del = row => { $c(`确定删除学生 ${row.realName}（${row.username}）？删除后账号将被禁用`).then(async ()=>{ await api.deleteStudent(row.id); if (students.value.length === 1 && page.value > 1) page.value--; loadStudents(); $m('已删除') }).catch(()=>{}) }
-        return { classList, selectedClazzId, students, loading, page, pageSize, total, clazzName, changeClazz, onPageChange, loadStudents, resetPwd, addVisible, addForm, showAdd, saveAdd, transferVisible, transferRow, transferToClazzId, showTransfer, doTransfer, del }
+        return { classList, selectedClazzId, students, loading, page, pageSize, total, clazzName, changeClazz, onPageChange, onSizeChange, loadStudents, resetPwd, addVisible, addForm, showAdd, saveAdd, transferVisible, transferRow, transferToClazzId, showTransfer, doTransfer, del }
     }
 })
 
@@ -524,8 +534,8 @@ const AdminQuestions = defineComponent({
             <el-select v-model="filterDifficulty" placeholder="难度" size="small" style="width:120px;margin-right:8px" clearable>
                 <el-option v-for="(v,k) in DIFF_MAP" :key="k" :label="v.label" :value="k"/>
             </el-select>
-            <el-button size="small" @click="load">查询</el-button>
-            <el-table :data="list" style="margin-top:12px" border stripe>
+            <el-button size="small" @click="search">查询</el-button>
+            <el-table :data="list" style="margin-top:12px" border stripe max-height="460">
                 <el-table-column prop="id" label="ID" width="60"/>
                 <el-table-column prop="type" label="题型" width="100"><template #default="{row}">{{TYPE_MAP[row.type]||row.type}}</template></el-table-column>
                 <el-table-column prop="content" label="题干" show-overflow-tooltip><template #default="{row}">{{stripHtml(row.content)}}</template></el-table-column>
@@ -543,6 +553,10 @@ const AdminQuestions = defineComponent({
                     </template>
                 </el-table-column>
             </el-table>
+            <el-pagination v-if="total > pageSize" :current-page="page" :page-size="pageSize" :total="total"
+                           :page-sizes="[10, 50, 100]" layout="total, sizes, prev, pager, next, jumper"
+                           style="margin-top:12px;justify-content:flex-end"
+                           @current-change="onPageChange" @size-change="onSizeChange"/>
             <!-- 新增/编辑题目弹窗 -->
             <el-dialog :title="isEdit?'编辑题目':'新增题目'" v-model="dialogVisible" width="880px" @opened="initEditor" @closed="destroyEditor">
                 <el-form :model="form" label-width="80px">
@@ -681,10 +695,14 @@ const AdminQuestions = defineComponent({
         </div>`,
     setup() {
         const list = ref([]), keyword = ref(''), filterType = ref(''), filterDifficulty = ref(''), dialogVisible = ref(false), kpList = ref([]), isEdit = ref(false)
+        const page = ref(1), pageSize = ref(10), total = ref(0)
         const form = reactive({id:null,type:'SINGLE_CHOICE',content:'',correctAnswer:'',referenceAnswer:'',difficulty:'MEDIUM',score:5,options:[],knowledgePointIds:[]})
-        const load = async () => { try { const r = await api.questions({page:1,size:100,keyword:keyword.value,type:filterType.value,difficulty:filterDifficulty.value}); list.value = r.data.data.records } catch(e) { console.error(e) } }
+        const load = async () => { try { const r = await api.questions({page: page.value, size: pageSize.value, keyword: keyword.value, type: filterType.value, difficulty: filterDifficulty.value}); list.value = r.data.data.records; total.value = r.data.data.total || 0 } catch(e) { console.error(e) } }
+        const search = () => { page.value = 1; load() }
+        const onPageChange = p => { page.value = p; load() }
+        const onSizeChange = s => { pageSize.value = s; page.value = 1; load() }
         const toggle = async id => { try { await api.toggleQuestion(id); load() } catch(e) { console.error(e) } }
-        const del = id => { $c('确定删除该题目？').then(async ()=>{ await api.deleteQuestion(id); load(); $m('已删除') }).catch(()=>{}) }
+        const del = id => { $c('确定删除该题目？').then(async ()=>{ await api.deleteQuestion(id); if (list.value.length === 1 && page.value > 1) page.value--; load(); $m('已删除') }).catch(()=>{}) }
         // ========== 富文本题干编辑器（wangeditor 5：图片/公式/代码块）==========
         let editor = null
         const editorBox = ref(null), toolbarBox = ref(null)
@@ -898,7 +916,7 @@ const AdminQuestions = defineComponent({
             else $m(msg)
         }
         onMounted(async () => { load(); try { const r = await api.knowledgePoints(); kpList.value = r.data.data } catch(e) { console.error(e) } })
-        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, load, toggle, del, showAdd, edit, save, uploadQuestions,
+        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, page, pageSize, total, load, search, onPageChange, onSizeChange, toggle, del, showAdd, edit, save, uploadQuestions,
             editorBox, toolbarBox, initEditor, destroyEditor, chartVisible, chartForm, chartPreview, openChartDialog, insertChart,
             isObjective, isSubjective, stripHtml,
             aiVisible, aiType, aiCount, aiDifficulty, aiMaterial, aiDrafts, aiLoading, aiImporting, aiChecked, aiCheckAll, aiEditVisible, aiEditForm, materials, aiMaterialId, openAi, aiRun, materialUpload, materialDelete, aiEdit, aiImport }
