@@ -14,6 +14,7 @@ import com.xtu.homework.util.TextExtractor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -35,6 +36,7 @@ public class AdminController {
     private final HomeworkDao homeworkDao;
     private final KnowledgePointDao knowledgePointDao;
     private final TeachingClassDao teachingClassDao;
+    private final TeachingClassClazzDao teachingClassClazzDao;
     private final QuestionKnowledgeDao questionKnowledgeDao;
     private final QuestionOptionDao questionOptionDao;
     private final HomeworkQuestionDao homeworkQuestionDao;
@@ -209,6 +211,7 @@ public class AdminController {
     }
 
     @DeleteMapping("/classes/{id}")
+    @Transactional
     public R deleteClass(@PathVariable Long id) {
         if (id == null) {
             return R.badRequest("班级不存在");
@@ -227,6 +230,9 @@ public class AdminController {
                 .eq(User::getClazzId, id)
                 .eq(User::getRole, "STUDENT")
                 .set(User::getClazzId, null));
+        // 清理教学班-自然班关联（外键子表，否则 FOREIGN KEY 约束阻止删除）
+        teachingClassClazzDao.delete(new LambdaQueryWrapper<TeachingClassClazz>()
+                .eq(TeachingClassClazz::getClazzId, id));
         clazzDao.deleteById(id);
         return R.ok("班级已删除");
     }

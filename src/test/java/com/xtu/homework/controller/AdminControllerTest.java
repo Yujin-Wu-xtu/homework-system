@@ -1,7 +1,10 @@
 package com.xtu.homework.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.xtu.homework.dao.TeachingClassClazzDao;
 import com.xtu.homework.dao.UserDao;
+import com.xtu.homework.entity.TeachingClassClazz;
 import com.xtu.homework.entity.User;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +29,8 @@ class AdminControllerTest extends BaseControllerTest {
     private static Long appQuestionId;
     @Autowired
     private UserDao userDao;
+    @Autowired
+    private TeachingClassClazzDao teachingClassClazzDao;
 
     private static final String T_TEACHER_USER = "TEST-T-01";
     private static final String T_STUDENT_USER = "TEST-S-01";
@@ -316,6 +321,11 @@ class AdminControllerTest extends BaseControllerTest {
         u.setId(stuId);
         u.setStatus("DISABLED");
         userDao.updateById(u);
+        // 教学班关联该班级（外键约束场景：teaching_class_clazz 引用 clazz）
+        TeachingClassClazz rel = new TeachingClassClazz();
+        rel.setTeachingClassId(1L);
+        rel.setClazzId(clazzId);
+        teachingClassClazzDao.insert(rel);
         MvcResult r2 = delete("/api/admin/classes/" + clazzId, adminToken());
         assertOk(r2);
         MvcResult tree = get("/api/admin/classes/tree", adminToken());
@@ -331,5 +341,8 @@ class AdminControllerTest extends BaseControllerTest {
         User after = userDao.selectById(stuId);
         assertNotNull(after, "禁用学生账号应保留");
         assertNull(after.getClazzId(), "禁用学生应解除班级归属");
+        Long relLeft = teachingClassClazzDao.selectCount(new LambdaQueryWrapper<TeachingClassClazz>()
+                .eq(TeachingClassClazz::getClazzId, clazzId));
+        assertEquals(0L, relLeft, "教学班-自然班关联记录应随班级删除清理（外键子表）");
     }
 }
