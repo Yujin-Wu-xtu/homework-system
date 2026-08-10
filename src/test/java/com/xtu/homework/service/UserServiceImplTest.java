@@ -250,7 +250,7 @@ class UserServiceImplTest {
         User saved = userService.addStudent(1L, s);
         userService.deleteStudent(saved.getId());
         User after = userService.getById(saved.getId());
-        assertEquals("DISABLED", after.getStatus(), "删除应为软删（禁用账号）");
+        assertNull(after, "删除应为物理删除，账号应彻底不存在");
     }
 
     // ========== Excel 导入（列名匹配 + 排错）==========

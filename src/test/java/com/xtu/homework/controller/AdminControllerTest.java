@@ -160,10 +160,21 @@ class AdminControllerTest extends BaseControllerTest {
 
     @Test
     @Order(12)
-    void testDeleteStudentSoftDelete() throws Exception {
+    void testDeleteStudentPhysically() throws Exception {
         MvcResult r = delete("/api/admin/students/" + testStudentId, adminToken());
         assertOk(r);
-        assertTrue(msg(r).contains("禁用"), "删除学生应提示账号禁用");
+        // 物理删除：列表不再出现该学生
+        MvcResult list = get("/api/admin/students?page=1&size=100", adminToken());
+        assertOk(list);
+        boolean found = false;
+        for (JsonNode n : body(list).path("data").path("records")) {
+            if (n.path("id").asLong() == testStudentId) found = true;
+        }
+        assertFalse(found, "物理删除后学生不应再出现在列表");
+        // 原账号不能登录（401/400 均视为拒绝）
+        MvcResult login = postJson("/api/auth/login",
+                Map.of("username", T_STUDENT_USER, "password", "Admin123456"), null);
+        assertNotEquals(200, code(login), "删除后原账号不能登录");
     }
 
     // ========== 题库 ==========

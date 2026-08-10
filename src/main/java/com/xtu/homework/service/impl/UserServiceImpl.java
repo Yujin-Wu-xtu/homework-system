@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.xtu.homework.dao.AuditLogDao;
 import com.xtu.homework.dao.ClazzDao;
 import com.xtu.homework.dao.HomeworkDao;
+import com.xtu.homework.dao.SubmissionAnswerDao;
 import com.xtu.homework.dao.SubmissionDao;
 import com.xtu.homework.dao.TeachingClassClazzDao;
 import com.xtu.homework.dao.TeachingClassDao;
@@ -15,6 +16,7 @@ import com.xtu.homework.entity.AuditLog;
 import com.xtu.homework.entity.Clazz;
 import com.xtu.homework.entity.Homework;
 import com.xtu.homework.entity.Submission;
+import com.xtu.homework.entity.SubmissionAnswer;
 import com.xtu.homework.entity.TeachingClass;
 import com.xtu.homework.entity.TeachingClassClazz;
 import com.xtu.homework.entity.TeachingClassStudent;
@@ -59,6 +61,7 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
     private final TeachingClassStudentDao teachingClassStudentDao;
     private final HomeworkDao homeworkDao;
     private final SubmissionDao submissionDao;
+    private final SubmissionAnswerDao submissionAnswerDao;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final VerificationCodeService verificationCodeService;
@@ -372,14 +375,24 @@ public class UserServiceImpl extends ServiceImpl<UserDao, User> implements UserS
     }
 
     @Override
+    @Transactional
     public void deleteStudent(Long studentId) {
         User student = userDao.selectById(studentId);
         if (student == null || !"STUDENT".equals(student.getRole())) {
             throw new RuntimeException("学生不存在");
         }
-        // 软删除：置 DISABLED，保留历史提交记录的外键完整性
-        student.setStatus("DISABLED");
-        userDao.updateById(student);
+        // 物理删除：级联清理提交答案 → 提交记录 → 选修教学班关系 → 账号
+        List<Submission> subs = submissionDao.selectList(new LambdaQueryWrapper<Submission>()
+                .eq(Submission::getStudentId, studentId));
+        List<Long> subIds = subs.stream().map(Submission::getId).toList();
+        if (!subIds.isEmpty()) {
+            submissionAnswerDao.delete(new LambdaQueryWrapper<SubmissionAnswer>()
+                    .in(SubmissionAnswer::getSubmissionId, subIds));
+            submissionDao.deleteBatchIds(subIds);
+        }
+        teachingClassStudentDao.delete(new LambdaQueryWrapper<TeachingClassStudent>()
+                .eq(TeachingClassStudent::getStudentId, studentId));
+        userDao.deleteById(studentId);
     }
 
     @Override

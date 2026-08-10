@@ -296,7 +296,7 @@ public class AdminController {
     public R deleteStudent(@PathVariable Long id) {
         try {
             userService.deleteStudent(id);
-            return R.ok("学生已删除（账号禁用）");
+            return R.ok("学生已删除（账号及提交记录已一并清理）");
         } catch (RuntimeException e) {
             return R.badRequest(e.getMessage());
         }
