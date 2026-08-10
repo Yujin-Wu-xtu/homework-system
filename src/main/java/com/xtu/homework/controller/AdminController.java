@@ -1,6 +1,7 @@
 package com.xtu.homework.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xtu.homework.common.R;
 import com.xtu.homework.dao.*;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -35,6 +37,7 @@ public class AdminController {
     private final QuestionKnowledgeDao questionKnowledgeDao;
     private final QuestionOptionDao questionOptionDao;
     private final HomeworkQuestionDao homeworkQuestionDao;
+    private final SubmissionDao submissionDao;
     private final QuestionAiService questionAiService;
     private final AiMaterialDao aiMaterialDao;
     private final QuestionImageDao questionImageDao;
@@ -54,14 +57,62 @@ public class AdminController {
         long questionCount = questionDao.selectCount(
                 new LambdaQueryWrapper<Question>().eq(Question::getStatus, "ACTIVE"));
         long homeworkCount = homeworkDao.selectCount(null);
-        long knowledgePointCount = knowledgePointDao.selectCount(null);
+        long teachingClassCount = teachingClassDao.selectCount(null);
+        // 近 7 天提交趋势（含今天；按 submitTime 实际提交时刻 Java 侧聚合，避免 DATE() 函数方言差异）
+        LocalDate today = LocalDate.now();
+        List<Submission> recentSubs = submissionDao.selectList(new LambdaQueryWrapper<Submission>()
+                .isNotNull(Submission::getSubmitTime)
+                .ge(Submission::getSubmitTime, today.minusDays(6).atStartOfDay()));
+        Map<String, Long> trendMap = recentSubs.stream()
+                .collect(Collectors.groupingBy(s -> s.getSubmitTime().toLocalDate().toString(), Collectors.counting()));
+        List<Map<String, Object>> submitTrend = new ArrayList<>();
+        for (int i = 6; i >= 0; i--) {
+            String day = today.minusDays(i).toString();
+            submitTrend.add(Map.of("date", day, "count", trendMap.getOrDefault(day, 0L)));
+        }
+        // 题型分布（Java 侧分组）
+        List<Question> activeQuestions = questionDao.selectList(
+                new LambdaQueryWrapper<Question>().eq(Question::getStatus, "ACTIVE"));
+        Map<String, Long> typeMap = activeQuestions.stream()
+                .collect(Collectors.groupingBy(q -> q.getType() == null ? "UNKNOWN" : q.getType(), Collectors.counting()));
+        List<Map<String, Object>> questionTypeDist = new ArrayList<>();
+        typeMap.forEach((t, c) -> {
+            Map<String, Object> m = new HashMap<>();
+            m.put("type", t);
+            m.put("count", c);
+            questionTypeDist.add(m);
+        });
+        // 最近 5 个作业 + 提交统计（submitted=已提交人数 / total=应提交人数）
+        List<Homework> recent = homeworkDao.selectList(new QueryWrapper<Homework>()
+                .orderByDesc("create_time").last("LIMIT 5"));
+        List<Submission> allSubs = submissionDao.selectList(null);
+        Map<Long, Long> totalByHw = allSubs.stream().collect(Collectors.groupingBy(
+                Submission::getHomeworkId, Collectors.counting()));
+        Map<Long, Long> submittedByHw = allSubs.stream()
+                .filter(s -> !"NOT_SUBMITTED".equals(s.getStatus()))
+                .collect(Collectors.groupingBy(Submission::getHomeworkId, Collectors.counting()));
+        List<Map<String, Object>> recentHomeworks = new ArrayList<>();
+        for (Homework h : recent) {
+            TeachingClass tc = teachingClassDao.selectById(h.getTeachingClassId());
+            long total = totalByHw.getOrDefault(h.getId(), 0L);
+            long submitted = submittedByHw.getOrDefault(h.getId(), 0L);
+            recentHomeworks.add(Map.of(
+                    "id", h.getId(), "title", h.getTitle(),
+                    "teachingClassName", tc == null ? "—" : tc.getName(),
+                    "deadline", String.valueOf(h.getDeadline()),
+                    "status", h.getStatus(),
+                    "submitted", submitted, "total", total));
+        }
         return R.ok().data(Map.of(
                 "classCount", classCount,
                 "studentCount", studentCount,
                 "teacherCount", teacherCount,
                 "questionCount", questionCount,
                 "homeworkCount", homeworkCount,
-                "knowledgePointCount", knowledgePointCount));
+                "teachingClassCount", teachingClassCount,
+                "submitTrend", submitTrend,
+                "questionTypeDist", questionTypeDist,
+                "recentHomeworks", recentHomeworks));
     }
 
     // ---- 教师管理 ----

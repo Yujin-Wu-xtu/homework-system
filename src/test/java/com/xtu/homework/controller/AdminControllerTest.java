@@ -37,6 +37,9 @@ class AdminControllerTest extends BaseControllerTest {
         assertTrue(data.path("studentCount").asLong() >= 6, "学生数应≥6");
         assertTrue(data.path("teacherCount").asLong() >= 1);
         assertTrue(data.path("questionCount").asLong() >= 5);
+        assertEquals(7, data.path("submitTrend").size(), "提交趋势应为近 7 天");
+        assertTrue(data.path("questionTypeDist").isArray(), "题型分布应为数组");
+        assertTrue(data.path("recentHomeworks").isArray(), "最近作业应为数组");
     }
 
     // ========== 教师管理 ==========

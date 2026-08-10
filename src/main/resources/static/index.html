@@ -59,10 +59,11 @@
         .sidebar .el-menu-item:hover,.sidebar .el-menu-item.is-active{background:#263445;color:#409eff}
         .content{padding:20px;flex:1;overflow-y:auto}
         .stat-cards{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}
-        .stat-card{flex:1;min-width:160px;padding:20px;background:#fff;border-radius:8px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.06);cursor:pointer;transition:transform .2s}
-        .stat-card:hover{transform:translateY(-2px)}
-        .stat-card .num{font-size:32px;font-weight:700;color:#409eff}
-        .stat-card .label{font-size:13px;color:#909399;margin-top:4px}
+        .stat-card{flex:1;min-width:150px;padding:20px 20px 18px;border-radius:12px;color:#fff;text-align:left;box-shadow:0 4px 14px rgba(0,0,0,.12);cursor:pointer;transition:transform .2s,box-shadow .2s;position:relative;overflow:hidden}
+        .stat-card:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(0,0,0,.18)}
+        .stat-card .icon{font-size:26px;position:absolute;right:14px;top:12px;opacity:.9}
+        .stat-card .num{font-size:30px;font-weight:700;line-height:1.2}
+        .stat-card .label{font-size:13px;opacity:.92;margin-top:2px}
         .section-card{background:#fff;border-radius:8px;padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
         .section-card h3{margin-bottom:16px;font-size:16px;color:#303133;border-bottom:2px solid #409eff;padding-bottom:8px}
         /* 作答选项：横向流式排列（短选项并排不占整行），与题干左对齐 */
@@ -77,7 +78,7 @@
 </div>
 
 <script>
-const { createApp, ref, reactive, computed, watch, defineComponent, onMounted, nextTick, toRefs } = Vue
+const { createApp, ref, reactive, computed, watch, defineComponent, onMounted, onUnmounted, nextTick, toRefs } = Vue
 const { createRouter, createWebHistory, useRouter, useRoute } = VueRouter
 
 // ======== Axios 配置 ========
@@ -222,21 +223,76 @@ const AdminDashboard = defineComponent({
     template: `
         <div>
             <div class="stat-cards">
-                <div class="stat-card" v-for="s in stats" :key="s.label">
-                    <div class="num">{{ s.value }}</div><div class="label">{{ s.label }}</div>
+                <div class="stat-card" v-for="s in stats" :key="s.label" :style="{background: s.bg}" @click="s.path && $router.push(s.path)">
+                    <span class="icon">{{s.icon}}</span>
+                    <div class="num">{{s.value}}</div>
+                    <div class="label">{{s.label}}</div>
                 </div>
             </div>
-            <div class="section-card"><h3>系统总览</h3>
-                <p style="color:#909399">当前系统运行正常。请使用左侧菜单进行管理操作。</p>
+            <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+                <div class="section-card" style="flex:1;min-width:340px"><h3>近 7 天提交趋势</h3><div ref="trendChart" style="height:280px"></div></div>
+                <div class="section-card" style="flex:1;min-width:300px"><h3>题库题型分布</h3><div ref="typeChart" style="height:280px"></div></div>
+            </div>
+            <div class="section-card"><h3>最近作业</h3>
+                <el-table :data="recentHomeworks" border stripe max-height="320">
+                    <el-table-column prop="title" label="作业标题" show-overflow-tooltip/>
+                    <el-table-column prop="teachingClassName" label="教学班" width="170" show-overflow-tooltip/>
+                    <el-table-column label="截止时间" width="170"><template #default="{row}">{{row.deadline.replace('T',' ').slice(0,16)}}</template></el-table-column>
+                    <el-table-column label="状态" width="90"><template #default="{row}"><el-tag :type="row.status==='PUBLISHED'?'success':row.status==='CLOSED'?'info':'warning'" size="small">{{row.status==='PUBLISHED'?'已发布':row.status==='CLOSED'?'已关闭':'草稿'}}</el-tag></template></el-table-column>
+                    <el-table-column label="提交率" width="220">
+                        <template #default="{row}">
+                            <el-progress :percentage="row.total ? Math.round(row.submitted/row.total*100) : 0" :stroke-width="10"/>
+                        </template>
+                    </el-table-column>
+                </el-table>
+                <p v-if="!recentHomeworks.length" style="color:#909399">暂无作业</p>
             </div>
         </div>`,
     setup() {
-        const stats = ref([{label:'班级数',value:0},{label:'学生数',value:0},{label:'教师数',value:0},{label:'题库数',value:0},{label:'作业数',value:0},{label:'知识点数',value:0}])
-        const keys = ['classCount','studentCount','teacherCount','questionCount','homeworkCount','knowledgePointCount']
+        const stats = ref([
+            {label:'学生', icon:'👨‍🎓', bg:'linear-gradient(135deg,#42a5f5,#1e88e5)', value:0, path:'/students'},
+            {label:'教师', icon:'👩‍🏫', bg:'linear-gradient(135deg,#ab47bc,#8e24aa)', value:0, path:'/teachers'},
+            {label:'班级', icon:'🏫', bg:'linear-gradient(135deg,#26c6da,#00acc1)', value:0, path:'/classes'},
+            {label:'教学班', icon:'🗂️', bg:'linear-gradient(135deg,#ffa726,#fb8c00)', value:0, path:'/tcAdmin'},
+            {label:'题目', icon:'📚', bg:'linear-gradient(135deg,#66bb6a,#43a047)', value:0, path:'/questions'},
+            {label:'作业', icon:'📝', bg:'linear-gradient(135deg,#ef5350,#e53935)', value:0, path:''}
+        ])
+        const trendChart = ref(null), typeChart = ref(null)
+        const recentHomeworks = ref([])
+        let trendInst = null, typeInst = null
         onMounted(async () => {
-            try { const r = await api.dashboard(); const d = r.data.data; stats.value.forEach((s,i) => s.value = d[keys[i]] || 0) } catch(e) { console.error('Dashboard load failed', e) }
+            try {
+                const r = await api.dashboard(); const d = r.data.data
+                const order = ['studentCount','teacherCount','classCount','teachingClassCount','questionCount','homeworkCount']
+                stats.value.forEach((s, i) => s.value = d[order[i]] || 0)
+                recentHomeworks.value = d.recentHomeworks || []
+                // 提交趋势折线
+                if (trendChart.value && window.echarts) {
+                    trendInst = echarts.init(trendChart.value)
+                    trendInst.setOption({
+                        tooltip: {trigger:'axis'},
+                        grid: {left:40,right:16,top:30,bottom:24},
+                        xAxis: {type:'category', data: d.submitTrend.map(t => t.date.slice(5)), axisLabel:{fontSize:11}},
+                        yAxis: {type:'value', minInterval:1},
+                        series: [{name:'提交数', type:'line', smooth:true, data: d.submitTrend.map(t => t.count),
+                            areaStyle:{opacity:.15}, itemStyle:{color:'#409eff'}, lineStyle:{width:3}}]
+                    })
+                }
+                // 题型分布饼图
+                if (typeChart.value && window.echarts) {
+                    typeInst = echarts.init(typeChart.value)
+                    typeInst.setOption({
+                        tooltip:{trigger:'item'},
+                        legend:{bottom:0, textStyle:{fontSize:11}},
+                        series:[{type:'pie', radius:['40%','68%'], center:['50%','44%'],
+                            data: d.questionTypeDist.map(t => ({name: TYPE_MAP[t.type] || t.type, value: t.count})),
+                            label:{fontSize:11}}]
+                    })
+                }
+            } catch(e) { console.error('Dashboard load failed', e) }
         })
-        return { stats }
+        onUnmounted(() => { try { trendInst && trendInst.dispose() } catch(e){}; try { typeInst && typeInst.dispose() } catch(e){} })
+        return { stats, recentHomeworks, trendChart, typeChart }
     }
 })
 
