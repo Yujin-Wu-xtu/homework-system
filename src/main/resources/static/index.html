@@ -1057,7 +1057,7 @@ const TeacherTeachingClasses = defineComponent({
                         <el-input v-model="treeKeyword" placeholder="搜索年级/学院/专业/班级/学生" size="small" clearable style="margin-bottom:8px" @input="studentTreeRef?.filter"/>
                         <el-tree ref="studentTreeRef" :data="studentTree" show-checkbox node-key="key"
                                  :props="{label:'label',children:'children'}" :filter-node-method="filterNode"
-                                 @check="onTreeCheck" :expand-on-click-node="false" default-expand-all>
+                                 @check="onTreeCheck" default-expand-all>
                             <template #default="{data}">
                                 <span>{{data.label}}</span>
                                 <el-tag v-if="data.disabled" size="mini" type="info" style="margin-left:4px">已加入</el-tag>
