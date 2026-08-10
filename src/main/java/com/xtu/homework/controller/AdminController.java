@@ -2,6 +2,7 @@ package com.xtu.homework.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xtu.homework.common.R;
 import com.xtu.homework.dao.*;
@@ -212,15 +213,22 @@ public class AdminController {
         if (id == null) {
             return R.badRequest("班级不存在");
         }
-        long studentCount = userDao.selectCount(
+        // 只统计在册（ACTIVE）学生：软删遗留的 DISABLED 账号不阻止删除班级
+        long activeCount = userDao.selectCount(
                 new LambdaQueryWrapper<User>()
                         .eq(User::getClazzId, id)
-                        .eq(User::getRole, "STUDENT"));
-        if (studentCount > 0) {
-            return R.badRequest("班级下有" + studentCount + "名学生，请先转移学生再删除");
+                        .eq(User::getRole, "STUDENT")
+                        .eq(User::getStatus, "ACTIVE"));
+        if (activeCount > 0) {
+            return R.badRequest("班级下有 " + activeCount + " 名在册学生，请先转移学生再删除");
         }
+        // 禁用（软删遗留）账号解除班级归属，避免孤儿引用
+        userDao.update(null, new LambdaUpdateWrapper<User>()
+                .eq(User::getClazzId, id)
+                .eq(User::getRole, "STUDENT")
+                .set(User::getClazzId, null));
         clazzDao.deleteById(id);
-        return R.ok();
+        return R.ok("班级已删除");
     }
 
     @PostMapping("/classes/import")

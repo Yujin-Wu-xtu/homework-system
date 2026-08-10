@@ -463,7 +463,7 @@ const AdminClasses = defineComponent({
         const save = async () => { try { await api.addClass(form); dialogVisible.value = false; $m('新增成功'); load() } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
         const edit = row => { Object.assign(editForm, {id:row.clazzId, name:row.name, grade:row.grade, college:row.college||'', major:row.major||''}); editVisible.value = true }
         const saveEdit = async () => { try { await api.updateClass(editForm.id, editForm); editVisible.value = false; $m('修改成功'); load() } catch(e) { $m(e.response?.data?.msg||'失败','error') } }
-        const del = id => { $c('确定删除该班级？').then(async ()=>{ await api.deleteClass(id); currentClazz.value = null; students.value = []; load(); $m('已删除') }).catch(()=>{}) }
+        const del = id => { $c('确定删除该班级？').then(async ()=>{ try { await api.deleteClass(id); currentClazz.value = null; students.value = []; load(); $m('已删除') } catch(e) { $m(e.response?.data?.msg || '删除失败','error') } }).catch(()=>{}) }
         const removeStudent = row => { $c(`确定删除学生「${row.realName}（${row.username}）」？删除后账号及该生的作业提交记录将一并删除，不可恢复`).then(async ()=>{ await api.deleteStudent(row.id); $m('已删除'); loadStudents(currentClazz.value.clazzId); load() }).catch(()=>{}) }
         const saveAdd = async () => {
             if (!addForm.username || !addForm.realName) return $m('学号和姓名必填','error')

@@ -1,7 +1,10 @@
 package com.xtu.homework.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.xtu.homework.dao.UserDao;
+import com.xtu.homework.entity.User;
 import org.junit.jupiter.api.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.HashMap;
@@ -21,6 +24,8 @@ class AdminControllerTest extends BaseControllerTest {
     private static Long testQuestionId;
     private static Long testKpId;
     private static Long appQuestionId;
+    @Autowired
+    private UserDao userDao;
 
     private static final String T_TEACHER_USER = "TEST-T-01";
     private static final String T_STUDENT_USER = "TEST-S-01";
@@ -284,5 +289,47 @@ class AdminControllerTest extends BaseControllerTest {
     void testDeleteApplicationQuestion() throws Exception {
         MvcResult r = delete("/api/admin/questions/" + appQuestionId, adminToken());
         assertOk(r);
+    }
+
+    // ========== 删除班级（在册学生拒绝；DISABLED 软删遗留不阻止 + 解除归属）==========
+
+    @Test
+    @Order(20)
+    void testDeleteClassFlow() throws Exception {
+        // 建班级 + 在册学生
+        MvcResult c = postJson("/api/admin/classes",
+                Map.of("name", "TEST-DEL-CLAZZ", "grade", "2024级", "major", "软件工程"), adminToken());
+        assertOk(c);
+        long clazzId = body(c).path("data").path("id").asLong();
+        MvcResult s = postJson("/api/admin/students",
+                Map.of("clazzId", clazzId, "username", "TEST-DEL-STU", "realName", "删除班学生"), adminToken());
+        assertOk(s);
+        long stuId = body(s).path("data").path("id").asLong();
+
+        // 有在册学生 → 拒绝删除并明确提示
+        MvcResult r1 = delete("/api/admin/classes/" + clazzId, adminToken());
+        assertEquals(400, code(r1), "有在册学生应拒绝删除");
+        assertTrue(msg(r1).contains("在册学生"), "提示应包含在册学生，实际: " + msg(r1));
+
+        // 禁用该学生（模拟软删遗留账号）→ 班级应可删，且禁用学生解除班级归属
+        User u = new User();
+        u.setId(stuId);
+        u.setStatus("DISABLED");
+        userDao.updateById(u);
+        MvcResult r2 = delete("/api/admin/classes/" + clazzId, adminToken());
+        assertOk(r2);
+        MvcResult tree = get("/api/admin/classes/tree", adminToken());
+        boolean found = false;
+        for (JsonNode college : body(tree).path("data")) {
+            for (JsonNode major : college.path("children")) {
+                for (JsonNode cl : major.path("children")) {
+                    if (cl.path("clazzId").asLong() == clazzId) found = true;
+                }
+            }
+        }
+        assertFalse(found, "删除后班级树不应再有该班级");
+        User after = userDao.selectById(stuId);
+        assertNotNull(after, "禁用学生账号应保留");
+        assertNull(after.getClazzId(), "禁用学生应解除班级归属");
     }
 }
