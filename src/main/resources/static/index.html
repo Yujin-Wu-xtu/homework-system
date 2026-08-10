@@ -34,9 +34,19 @@
         .ans-content pre{background:#282c34;color:#abb2bf;padding:12px;border-radius:6px;overflow-x:auto;font-size:13px}
         .ans-content code{font-family:'Consolas','Courier New',monospace}
         .ans-content p{margin:4px 0}
-        /* 学生端富文本作答编辑器容器（应用题）：固定高度 + 边框，与管理员端同款防塌陷 */
-        .ans-editor-box{width:100%;border:1px solid #dcdfe6;border-radius:4px;overflow:hidden}
-        .ans-editor-box .ans-editor{height:220px;overflow-y:auto}
+        /* 学生端富文本作答编辑器容器（应用题）：固定高度 + 边框，与管理员端同款防塌陷。
+           高度必须 ≥300px：wangeditor 官方限制（"Textarea height < 300px may cause modal and
+           hoverbar position error"）——<300px 时 hoverbar/面板 JS 定位会错乱（实测 color 面板
+           跑到按钮上方 283px 被裁）；overflow 不能 hidden：hoverbar/面板溢出容器需要可见 */
+        .ans-editor-box{width:100%;border:1px solid #dcdfe6;border-radius:4px;overflow:visible}
+        .ans-editor-box .ans-editor{height:300px;overflow-y:auto}
+        /* hoverbar（选中文字浮动工具栏）与 toolbar 的下拉容器统一加固：强制贴按钮下方展开，
+           消除 wangeditor JS 向上展开定位在矮容器下的错乱；drop-panel 是 3ebd70c 漏掉的同类容器 */
+        .w-e-hover-bar .w-e-bar-item{position:relative}
+        .w-e-hover-bar{z-index:2100}
+        .w-e-hover-bar .w-e-select-list,
+        .w-e-hover-bar .w-e-drop-panel{top:100% !important;left:0 !important;margin-top:4px !important;bottom:auto !important;margin-bottom:0 !important;max-height:280px}
+        .w-e-toolbar .w-e-drop-panel{top:100% !important;left:0 !important;margin-top:4px !important;bottom:auto !important;margin-bottom:0 !important;max-height:280px}
         .login-container{display:flex;justify-content:center;align-items:center;min-height:100vh;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)}
         .login-card{width:420px;padding:40px;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
         .login-card h1{text-align:center;margin-bottom:30px;color:#303133;font-size:24px}
