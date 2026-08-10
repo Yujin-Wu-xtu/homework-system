@@ -297,7 +297,7 @@ const AdminClasses = defineComponent({
                     <el-input v-model="treeKeyword" placeholder="搜索学院/专业/班级" size="small" clearable style="margin-bottom:8px" @input="treeRef?.filter"/>
                     <el-tree ref="treeRef" :data="tree" :props="{label:'label',children:'children'}" node-key="label"
                              :filter-node-method="filterNode" @node-click="onNodeClick"
-                             :expand-on-click-node="false" highlight-current default-expand-all>
+                             highlight-current default-expand-all>
                         <template #default="{data}">
                             <span>{{data.label}}</span>
                             <span v-if="data.studentCount!==undefined" style="color:#909399;font-size:12px;margin-left:6px">({{data.studentCount}}人)</span>
