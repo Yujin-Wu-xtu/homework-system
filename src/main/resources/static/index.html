@@ -197,6 +197,7 @@ const api = {
     teacherHomeworks: p => axios.get('/api/teacher/homeworks', {params: p}),
     assignHomework: d => axios.post('/api/teacher/homeworks', d),
     deleteHomework: id => axios.delete('/api/teacher/homeworks/' + id),
+    closeHomework: id => axios.put('/api/teacher/homeworks/' + id + '/close'),
     homeworkDetail: id => axios.get('/api/teacher/homeworks/' + id + '/detail'),
     homeworkSubmissions: id => axios.get('/api/teacher/homeworks/' + id + '/submissions'),
     gradingList: (id, p) => axios.get('/api/teacher/homeworks/' + id + '/grading', {params: p}),
@@ -1056,6 +1057,7 @@ const TeacherHomeworks = defineComponent({
                     <template #default="{row}">
                         <el-button size="small" @click="viewSubmissions(row)">提交情况</el-button>
                         <el-button size="small" type="success" @click="downloadGrades(row.id)">下载成绩</el-button>
+                        <el-button size="small" type="warning" @click="closeHw(row.id)" v-if="row.status==='PUBLISHED'">关闭</el-button>
                         <el-button size="small" type="danger" @click="del(row.id)">删除</el-button>
                     </template>
                 </el-table-column>
@@ -1095,6 +1097,7 @@ const TeacherHomeworks = defineComponent({
         const submissions = ref([]), answers = ref([]), currentHwId = ref(null)
         const load = async () => { loading.value = true; try { const r = await api.teacherHomeworks({page:1,size:50}); list.value = r.data.data.records } catch(e) { console.error(e) } finally { loading.value = false } }
         const del = id => { $c('确定删除该作业？').then(async ()=>{ await api.deleteHomework(id); load(); $m('已删除') }).catch(()=>{}) }
+        const closeHw = id => { $c('关闭后学生将不能再提交或修改答案，确定关闭该作业？').then(async ()=>{ await api.closeHomework(id); load(); $m('作业已关闭') }).catch(()=>{}) }
         const viewSubmissions = async row => { currentHwId.value = row.id; subVisible.value = true; try { const r = await api.homeworkSubmissions(row.id); submissions.value = r.data.data } catch(e) { console.error(e) } }
         const viewAnswers = async row => {
             if (!row.submissionId) return
@@ -1112,7 +1115,7 @@ const TeacherHomeworks = defineComponent({
         const statusTag = s => ({PUBLISHED:'success',DRAFT:'info',CLOSED:'warning'}[s]||'')
         const statusLabel = s => ({PUBLISHED:'进行中',DRAFT:'草稿',CLOSED:'已关闭'}[s]||s)
         onMounted(load)
-        return { list, loading, del, viewSubmissions, viewAnswers, submissions, answers, subVisible, answerVisible, currentHwId, doGrade, downloadGrades, statusTag, statusLabel, TYPE_MAP }
+        return { list, loading, del, closeHw, viewSubmissions, viewAnswers, submissions, answers, subVisible, answerVisible, currentHwId, doGrade, downloadGrades, statusTag, statusLabel, TYPE_MAP }
     }
 })
 

@@ -44,6 +44,9 @@ public class SubmissionServiceImpl extends ServiceImpl<SubmissionDao, Submission
         if (LocalDateTime.now().isAfter(hw.getDeadline())) {
             throw new RuntimeException("已超过提交截止时间");
         }
+        if ("CLOSED".equals(hw.getStatus())) {
+            throw new RuntimeException("作业已关闭，无法提交或修改");
+        }
 
         Submission sub = submissionDao.selectOne(
                 new LambdaQueryWrapper<Submission>()

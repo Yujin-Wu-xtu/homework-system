@@ -346,6 +346,42 @@ class TeacherControllerTest extends BaseControllerTest {
                 "评分后总分应为 8");
     }
 
+    /** 作业关闭：教师关闭后学生不可再提交/修改，他人不可关闭，学生端视角变为 CLOSED */
+    @Test
+    @Order(22)
+    void testCloseHomeworkFlow() throws Exception {
+        // 教师 A 关闭自己的作业（已有学生提交，关闭应成功）
+        MvcResult close = putJson("/api/teacher/homeworks/" + homeworkId + "/close", null, teacherToken());
+        assertOk(close);
+        assertEquals("CLOSED", body(close).path("data").path("status").asText(), "关闭后作业状态应为 CLOSED");
+
+        // 关闭后学生提交/修改被拒
+        MvcResult submit = postJson("/api/student/homeworks/" + homeworkId + "/submit",
+                Map.of("answers", List.of(Map.of("questionId", 1, "answer", "C"))), studentToken());
+        assertEquals(400, code(submit), "已关闭作业提交应被拒绝");
+        assertTrue(msg(submit).contains("关闭"), "应提示作业已关闭，实际: " + msg(submit));
+
+        // 教师 B 不能关闭教师 A 的作业（IDOR）
+        MvcResult other = putJson("/api/teacher/homeworks/" + homeworkId + "/close", null, teacherBToken);
+        assertEquals(400, code(other), "他人作业不可关闭");
+
+        // 重复关闭幂等
+        MvcResult again = putJson("/api/teacher/homeworks/" + homeworkId + "/close", null, teacherToken());
+        assertOk(again);
+
+        // 学生端列表视角：已关闭作业显示 CLOSED（进"已完成"tab，不再提供提交入口）
+        MvcResult list = get("/api/student/homeworks?page=1&size=50", studentToken());
+        assertOk(list);
+        boolean closedShown = false;
+        for (JsonNode n : body(list).path("data").path("records")) {
+            if (n.path("id").asLong() == homeworkId) {
+                closedShown = true;
+                assertEquals("CLOSED", n.path("status").asText(), "已关闭作业学生视角应为 CLOSED");
+            }
+        }
+        assertTrue(closedShown, "学生列表应包含已关闭作业");
+    }
+
     private Map<String, Object> homeworkBody(Long tcId, String title) {
         Map<String, Object> body = new HashMap<>();
         body.put("title", title);

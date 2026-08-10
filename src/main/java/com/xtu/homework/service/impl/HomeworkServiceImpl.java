@@ -121,6 +121,18 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
     }
 
     @Override
+    @Transactional
+    public Homework closeHomework(Long homeworkId) {
+        Homework hw = homeworkDao.selectById(homeworkId);
+        if (hw == null) throw new RuntimeException("作业不存在");
+        if ("CLOSED".equals(hw.getStatus())) return hw;   // 幂等
+        if (!"PUBLISHED".equals(hw.getStatus())) throw new RuntimeException("仅发布中的作业可关闭");
+        hw.setStatus("CLOSED");
+        homeworkDao.updateById(hw);
+        return hw;
+    }
+
+    @Override
     public List<Map<String, Object>> getSubmissionStatus(Long homeworkId) {
         List<Submission> subs = submissionDao.selectList(
                 new LambdaQueryWrapper<Submission>()
@@ -191,6 +203,8 @@ public class HomeworkServiceImpl extends ServiceImpl<HomeworkDao, Homework>
         Map<Long, String> subStatus = new HashMap<>();
         for (Submission s : subs) subStatus.put(s.getHomeworkId(), s.getStatus());
         for (Homework h : result.getRecords()) {
+            // 已关闭的作业保持全局状态 CLOSED（学生端只读，进"已完成"tab，不再提供提交/修改入口）
+            if ("CLOSED".equals(h.getStatus())) continue;
             String st = subStatus.get(h.getId());
             if (st != null) h.setStatus(st);
         }

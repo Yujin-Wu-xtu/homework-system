@@ -22,10 +22,11 @@ spring:
       mail.smtp.auth: true
       mail.smtp.ssl.enable: true
   # === MySQL（主数据库：本地 XAMPP MariaDB / 生产 Docker MySQL）===
-  # 本机 XAMPP root 默认空密码；生产环境用环境变量注入: set DB_PASSWORD=xxx
+  # host/port 也走环境变量（Docker 部署 MySQL 在独立容器/远程库时 localhost 连不上）：
+  #   DB_HOST=mysql DB_PORT=3306（compose 服务名）；本机默认 localhost:3306
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/homework_system?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/homework_system?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8&allowPublicKeyRetrieval=true
     username: root
     password: ${DB_PASSWORD:}
     type: com.alibaba.druid.pool.DruidDataSource
@@ -44,7 +45,9 @@ mybatis-plus:
       logic-delete-value: 1
       logic-not-delete-value: 0
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # SQL 日志可切换：开发默认 StdOutImpl（便于排障）；生产 compose 设
+    # MYBATIS_LOG_IMPL=org.apache.ibatis.logging.slf4j.Slf4jImpl 静默（压测性能/日志量）
+    log-impl: ${MYBATIS_LOG_IMPL:org.apache.ibatis.logging.stdout.StdOutImpl}
 
 jwt:
   secret: ${JWT_SECRET:MySuperSecretKeyForJWTTokenGeneration2026!@#$%^&*()}

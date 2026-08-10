@@ -70,3 +70,18 @@ src/main/java/com/xtu/homework/
 └── util/
     └── JwtUtil.java                  # JWT 工具类
 ```
+
+## 本地运行
+
+```powershell
+# Windows（首选，需要本机 XAMPP MySQL 已启动）
+.\mvnw.cmd spring-boot:run
+```
+
+- 默认账号：admin / T2024001 / 20240001~20240006，密码 `Admin123456`（首次登录强制改密）
+- 接口文档：http://localhost:8080/doc.html
+- 数据库：MySQL（本地 XAMPP MariaDB，库 `homework_system`）；生产用环境变量 `DB_HOST/DB_PORT/DB_PASSWORD` 注入（见 DEPLOY.md）
+
+## 服务器部署
+
+见 [DEPLOY.md](DEPLOY.md)（Docker Compose：应用 + MariaDB + 数据卷持久化，一键 `docker compose up -d --build`）。

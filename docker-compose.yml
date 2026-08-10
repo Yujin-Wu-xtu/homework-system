@@ -1,62 +1,59 @@
 # =====================================================
-# 在线作业系统 Docker Compose
-# 服务: app (Spring Boot) + db (MySQL 8.0)
-# 用法: docker compose up -d
+# 在线作业系统 Docker Compose（生产部署）
+# 用法：
+#   cp .env.example .env   # 按需修改 DB_PASSWORD / JWT_SECRET / AI / 邮箱配置
+#   docker compose up -d --build
+# 访问 http://<服务器IP>:8080
 # =====================================================
-
-version: '3.8'
-
 services:
-  # ---- MySQL 数据库 ----
-  db:
-    image: mysql:8.0
-    container_name: homework-db
+  mysql:
+    image: mariadb:10.4
+    container_name: homework-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-Homework2026!}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-homework123456}
       MYSQL_DATABASE: homework_system
-      MYSQL_CHARSET: utf8mb4
-      MYSQL_COLLATION: utf8mb4_unicode_ci
-    ports:
-      - "3307:3306"
+      TZ: Asia/Shanghai
     volumes:
-      - mysql_data:/var/lib/mysql
-      - ./src/main/resources/sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h localhost -u root"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    networks:
-      - homework-net
+      retries: 12
 
-  # ---- Spring Boot 应用 ----
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: homework-app
     restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # 数据库连接（compose 服务名 mysql；host/port 已在 application.yml 环境变量化）
+      DB_HOST: mysql
+      DB_PORT: "3306"
+      DB_PASSWORD: ${DB_PASSWORD:-homework123456}
+      # 生产 JWT 密钥（务必覆盖默认值；所有已签发 token 在更换后失效）
+      JWT_SECRET: ${JWT_SECRET:-change-me-before-production-2026}
+      # 生产 SQL 日志静默（开发默认 StdOutImpl 看 SQL，压测/生产用 Slf4jImpl）
+      MYBATIS_LOG_IMPL: org.apache.ibatis.logging.slf4j.Slf4jImpl
+      TZ: Asia/Shanghai
+      # AI 出题（可选，不设则 AI 生成提示"AI 服务未配置"）
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      # 邮箱注册验证码（可选，不设则注册发码失败）
+      MAIL_AUTH_CODE: ${MAIL_AUTH_CODE:-}
     ports:
       - "8080:8080"
-    environment:
-      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
-      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/homework_system?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf-8&allowPublicKeyRetrieval=true
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-Homework2026!}
-      SPRING_DATASOURCE_TYPE: com.alibaba.druid.pool.DruidDataSource
-      SPRING_SQL_INIT_MODE: never
-      SPRING_H2_CONSOLE_ENABLED: "false"
-      JWT_SECRET: ${JWT_SECRET:-ProductionSecretKeyChangeMeInProduction2026!@#$}
-    depends_on:
-      db:
-        condition: service_healthy
-    networks:
-      - homework-net
+    volumes:
+      - app-data:/app/data   # AI 课件材料 + 题干图片（question-images/ai-materials）
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
 
 volumes:
-  mysql_data:
-
-networks:
-  homework-net:
-    driver: bridge
+  mysql-data:    # MySQL 数据（库表持久化）
+  app-data:      # 应用数据（data/ai-materials + data/question-images）

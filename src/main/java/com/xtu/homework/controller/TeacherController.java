@@ -263,6 +263,18 @@ public class TeacherController {
         }
     }
 
+    /** 关闭作业：学生端立即只读（不可再提交/修改），需求"作业基本信息管理"覆盖 */
+    @PutMapping("/homeworks/{id}/close")
+    public R closeHomework(@PathVariable Long id,
+                           @RequestAttribute("userId") Long teacherId) {
+        try {
+            requireOwnHomework(id, teacherId);
+            return R.ok().data(homeworkService.closeHomework(id));
+        } catch (RuntimeException e) {
+            return R.badRequest(e.getMessage());
+        }
+    }
+
     @GetMapping("/homeworks/{id}/detail")
     public R getHomeworkDetail(@PathVariable Long id,
                                @RequestAttribute("userId") Long teacherId) {
