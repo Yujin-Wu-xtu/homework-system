@@ -499,6 +499,8 @@ const AdminStudents = defineComponent({
                     <el-option v-for="c in classList" :key="c.id" :label="c.name" :value="c.id"/>
                 </el-select>
             </el-form-item></el-form>
+            <el-input v-model="keyword" placeholder="搜索学号/姓名" size="small" style="width:240px;margin-right:8px" clearable @clear="search"/>
+            <el-button size="small" @click="search">搜索</el-button>
             <el-table :data="students" border stripe v-loading="loading" max-height="460">
                 <el-table-column prop="username" label="学号" width="140"/>
                 <el-table-column prop="realName" label="姓名" width="120"/>
@@ -540,7 +542,7 @@ const AdminStudents = defineComponent({
             </el-dialog>
         </div>`,
     setup() {
-        const classList = ref([]), selectedClazzId = ref(0), students = ref([]), loading = ref(false)
+        const classList = ref([]), selectedClazzId = ref(0), keyword = ref(''), students = ref([]), loading = ref(false)
         const page = ref(1), pageSize = ref(10), total = ref(0)
         const addVisible = ref(false), addForm = reactive({username:'',realName:'',phone:'',email:''})
         const transferVisible = ref(false), transferRow = ref(null), transferToClazzId = ref(null)
@@ -549,12 +551,13 @@ const AdminStudents = defineComponent({
         const loadStudents = async () => {
             loading.value = true
             try {
-                const p = {page: page.value, size: pageSize.value}
+                const p = {page: page.value, size: pageSize.value, keyword: keyword.value}
                 const r = selectedClazzId.value ? await api.classStudents(selectedClazzId.value, p) : await api.allStudents(p)
                 students.value = r.data.data.records; total.value = r.data.data.total || 0
             } catch(e) { console.error(e) } finally { loading.value = false }
         }
         const changeClazz = () => { page.value = 1; loadStudents() }
+        const search = () => { page.value = 1; loadStudents() }
         const onPageChange = p => { page.value = p; loadStudents() }
         const onSizeChange = s => { pageSize.value = s; page.value = 1; loadStudents() }
         const resetPwd = async id => { try { const r = await api.resetStudentPwd(id); $m('新密码：'+r.data.data?.newPassword) } catch(e) { console.error(e) } }
@@ -568,7 +571,7 @@ const AdminStudents = defineComponent({
             try { await api.transferStudent(selectedClazzId.value, transferRow.value.id, {toClazzId: transferToClazzId.value}); transferVisible.value = false; loadStudents(); $m('转班成功') } catch(e) { $m(e.response?.data?.msg||'转班失败','error') }
         }
         const del = row => { $c(`确定删除学生 ${row.realName}（${row.username}）？删除后账号及该生的作业提交记录将一并删除，不可恢复`).then(async ()=>{ await api.deleteStudent(row.id); if (students.value.length === 1 && page.value > 1) page.value--; loadStudents(); $m('已删除') }).catch(()=>{}) }
-        return { classList, selectedClazzId, students, loading, page, pageSize, total, clazzName, changeClazz, onPageChange, onSizeChange, loadStudents, resetPwd, addVisible, addForm, showAdd, saveAdd, transferVisible, transferRow, transferToClazzId, showTransfer, doTransfer, del }
+        return { classList, selectedClazzId, keyword, students, loading, page, pageSize, total, clazzName, changeClazz, search, onPageChange, onSizeChange, loadStudents, resetPwd, addVisible, addForm, showAdd, saveAdd, transferVisible, transferRow, transferToClazzId, showTransfer, doTransfer, del }
     }
 })
 
@@ -983,6 +986,8 @@ const AdminQuestions = defineComponent({
 const AdminKnowledge = defineComponent({
     template: `
         <div class="section-card"><h3>知识点管理 <el-button type="primary" size="small" @click="showAdd">新增知识点</el-button></h3>
+            <el-input v-model="keyword" placeholder="搜索知识点名称" size="small" style="width:240px;margin-right:8px" clearable @clear="search"/>
+            <el-button size="small" @click="search">搜索</el-button>
             <el-table :data="list" border stripe>
                 <el-table-column prop="id" label="ID" width="60"/>
                 <el-table-column prop="name" label="名称"/>
@@ -1005,8 +1010,9 @@ const AdminKnowledge = defineComponent({
             </el-dialog>
         </div>`,
     setup() {
-        const list = ref([]), dialogVisible = ref(false), isEdit = ref(false), form = reactive({id:null,name:'',subject:'',description:''})
-        const load = async () => { try { const r = await api.knowledgePoints(); list.value = r.data.data } catch(e) { console.error(e) } }
+        const list = ref([]), keyword = ref(''), dialogVisible = ref(false), isEdit = ref(false), form = reactive({id:null,name:'',subject:'',description:''})
+        const load = async () => { try { const r = await api.knowledgePoints(keyword.value); list.value = r.data.data } catch(e) { console.error(e) } }
+        const search = () => load()
         const showAdd = () => { Object.assign(form, {id:null,name:'',subject:'',description:''}); isEdit.value = false; dialogVisible.value = true }
         const edit = row => { Object.assign(form, row); isEdit.value = true; dialogVisible.value = true }
         const save = async () => {
@@ -1017,7 +1023,7 @@ const AdminKnowledge = defineComponent({
         }
         const del = id => { $c('确定删除该知识点？').then(async ()=>{ const r = await api.deleteKnowledgePoint(id); if (r.data.code !== 200) { $m(r.data.msg || '删除失败','error'); return } load(); $m('已删除') }).catch(()=>{}) }
         onMounted(load)
-        return { list, dialogVisible, isEdit, form, showAdd, edit, save, del }
+        return { list, keyword, dialogVisible, isEdit, form, search, showAdd, edit, save, del }
     }
 })
 
@@ -1025,6 +1031,8 @@ const AdminKnowledge = defineComponent({
 const AdminTeachingClasses = defineComponent({
     template: `
         <div class="section-card"><h3>教学班管理 <el-button type="primary" size="small" @click="showAdd">新建教学班</el-button></h3>
+            <el-input v-model="keyword" placeholder="搜索教学班名称" size="small" style="width:240px;margin-right:8px" clearable @clear="search"/>
+            <el-button size="small" @click="search">搜索</el-button>
             <el-table :data="list" border stripe>
                 <el-table-column prop="id" label="ID" width="60"/>
                 <el-table-column prop="name" label="教学班名称"/>
@@ -1061,10 +1069,11 @@ const AdminTeachingClasses = defineComponent({
             </el-dialog>
         </div>`,
     setup() {
-        const list = ref([]), teachers = ref([]), dialogVisible = ref(false), isEdit = ref(false)
+        const list = ref([]), keyword = ref(''), teachers = ref([]), dialogVisible = ref(false), isEdit = ref(false)
         const form = reactive({id:null,name:'',teacherId:null})
         const detailVisible = ref(false), currentRow = ref(null), detailClasses = ref([])
-        const load = async () => { try { const r = await api.adminTeachingClasses({page:1,size:100}); list.value = r.data.data.records } catch(e) { console.error(e) } }
+        const load = async () => { try { const r = await api.adminTeachingClasses({page:1,size:100,keyword:keyword.value}); list.value = r.data.data.records } catch(e) { console.error(e) } }
+        const search = () => load()
         const teacherName = id => { const t = teachers.value.find(x => x.id === id); return t ? t.realName + '（' + t.username + '）' : 'ID:' + id }
         const showAdd = () => { Object.assign(form,{id:null,name:'',teacherId:null}); isEdit.value = false; dialogVisible.value = true }
         const edit = row => { Object.assign(form,{id:row.id,name:row.name,teacherId:row.teacherId}); isEdit.value = true; dialogVisible.value = true }
@@ -1082,7 +1091,7 @@ const AdminTeachingClasses = defineComponent({
             try { const r = await api.adminTeachingClassDetail(row.id); detailClasses.value = r.data.data.classes } catch(e) { console.error(e) }
         }
         onMounted(async () => { load(); try { const r = await api.teachers({page:1,size:100}); teachers.value = r.data.data.records } catch(e) { console.error(e) } })
-        return { list, teachers, dialogVisible, isEdit, form, detailVisible, currentRow, detailClasses, load, teacherName, showAdd, edit, save, del, viewDetail }
+        return { list, keyword, teachers, dialogVisible, isEdit, form, detailVisible, currentRow, detailClasses, load, search, teacherName, showAdd, edit, save, del, viewDetail }
     }
 })
 

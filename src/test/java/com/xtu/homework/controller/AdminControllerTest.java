@@ -157,6 +157,18 @@ class AdminControllerTest extends BaseControllerTest {
                 "学生列表响应不得包含 password 字段");
     }
 
+    @Test
+    @Order(10)
+    void testStudentSearchByUsernameAndName() throws Exception {
+        MvcResult byUsername = get("/api/admin/students?page=1&size=50&keyword=" + T_STUDENT_USER, adminToken());
+        assertOk(byUsername);
+        assertEquals(1, body(byUsername).path("data").path("total").asInt(), "应支持按学号检索学生");
+
+        MvcResult byName = get("/api/admin/classes/1/students?page=1&size=50&keyword=测试学生", adminToken());
+        assertOk(byName);
+        assertEquals(1, body(byName).path("data").path("total").asInt(), "应支持按姓名检索班级内学生");
+    }
+
     /** 转班：TEST-S-01 从自然班 1 → 自然班 2 */
     @Test
     @Order(11)
@@ -309,6 +321,14 @@ class AdminControllerTest extends BaseControllerTest {
     void testDeleteApplicationQuestion() throws Exception {
         MvcResult r = delete("/api/admin/questions/" + appQuestionId, adminToken());
         assertOk(r);
+    }
+
+    @Test
+    @Order(19_1)
+    void testTeachingClassSearch() throws Exception {
+        MvcResult r = get("/api/admin/teaching-classes?page=1&size=20&keyword=2024级数据结构", adminToken());
+        assertOk(r);
+        assertEquals(1, body(r).path("data").path("total").asInt(), "应支持按教学班名称检索");
     }
 
     // ========== 删除班级（在册学生拒绝；DISABLED 软删遗留不阻止 + 解除归属）==========

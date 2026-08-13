@@ -250,9 +250,13 @@ public class AdminController {
     @GetMapping("/classes/{id}/students")
     public R listStudents(@PathVariable Long id,
                           @RequestParam(defaultValue = "1") int page,
-                          @RequestParam(defaultValue = "20") int size) {
+                          @RequestParam(defaultValue = "20") int size,
+                          @RequestParam(required = false) String keyword) {
         LambdaQueryWrapper<User> qw = new LambdaQueryWrapper<>();
         qw.eq(User::getClazzId, id).eq(User::getRole, "STUDENT").eq(User::getStatus, "ACTIVE");
+        if (keyword != null && !keyword.isBlank()) {
+            qw.and(w -> w.like(User::getUsername, keyword.trim()).or().like(User::getRealName, keyword.trim()));
+        }
         return R.ok().data(userDao.selectPage(new Page<>(page, size), qw));
     }
 
@@ -673,8 +677,14 @@ public class AdminController {
     // ---- 教学班管理 ----
     @GetMapping("/teaching-classes")
     public R listTeachingClasses(@RequestParam(defaultValue = "1") int page,
-                                  @RequestParam(defaultValue = "10") int size) {
-        return R.ok().data(teachingClassDao.selectPage(new Page<>(page, size), null));
+                                  @RequestParam(defaultValue = "10") int size,
+                                  @RequestParam(required = false) String keyword) {
+        LambdaQueryWrapper<TeachingClass> qw = new LambdaQueryWrapper<TeachingClass>()
+                .orderByDesc(TeachingClass::getCreateTime);
+        if (keyword != null && !keyword.isBlank()) {
+            qw.like(TeachingClass::getName, keyword.trim());
+        }
+        return R.ok().data(teachingClassDao.selectPage(new Page<>(page, size), qw));
     }
 
     @PostMapping("/teaching-classes")
