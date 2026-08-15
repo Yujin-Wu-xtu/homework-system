@@ -19,6 +19,7 @@
     <script src="/vendor/hljs/highlight.min.js"></script>
     <script src="/vendor/echarts.min.js"></script>
     <script src="/vendor/dompurify.min.js"></script>
+    <script src="/js/particles.js"></script>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:'Microsoft YaHei',sans-serif;background:#f5f7fa}
@@ -47,9 +48,53 @@
         .w-e-hover-bar .w-e-select-list,
         .w-e-hover-bar .w-e-drop-panel{top:100% !important;left:0 !important;margin-top:4px !important;bottom:auto !important;margin-bottom:0 !important;max-height:280px}
         .w-e-toolbar .w-e-drop-panel{top:100% !important;left:0 !important;margin-top:4px !important;bottom:auto !important;margin-bottom:0 !important;max-height:280px}
-        .login-container{display:flex;justify-content:center;align-items:center;min-height:100vh;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)}
-        .login-card{width:420px;padding:40px;background:#fff;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-        .login-card h1{text-align:center;margin-bottom:30px;color:#303133;font-size:24px}
+        /* ===== 登录页美化（frontend-beautify 分支）：左右分栏 + 品牌区 + 毛玻璃卡片 + 粒子背景 ===== */
+        .login-container{display:flex;min-height:100vh;background:#f5f7fa}
+        .login-brand{flex:1.15;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;
+            background:linear-gradient(135deg,#1a73e8 0%,#4f6df5 38%,#7c4dff 72%,#9c6bff 100%)}
+        .login-brand::before,.login-brand::after{content:'';position:absolute;border-radius:50%;filter:blur(60px);pointer-events:none}
+        .login-brand::before{width:420px;height:420px;left:-120px;top:-100px;background:rgba(255,255,255,.16)}
+        .login-brand::after{width:520px;height:520px;right:-160px;bottom:-140px;background:rgba(255,255,255,.10)}
+        .brand-canvas{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:none}
+        .brand-content{position:relative;z-index:2;max-width:480px;padding:0 40px;color:#fff}
+        .brand-logo{display:flex;gap:8px;margin-bottom:18px}
+        .brand-logo .dot{width:22px;height:22px;border-radius:50%}
+        .brand-logo .d1{background:#4285f4}.brand-logo .d2{background:#fbbc05}
+        .brand-logo .d3{background:#34a853}.brand-logo .d4{background:#ea4335}
+        .brand-content h1{font-size:34px;font-weight:700;margin-bottom:14px;letter-spacing:1px}
+        .brand-slogan{font-size:15px;line-height:1.8;color:rgba(255,255,255,.85);margin-bottom:44px}
+        .brand-points{display:flex;flex-direction:column;gap:22px}
+        .brand-points .pt{display:flex;gap:14px;align-items:flex-start}
+        .brand-points .pt .ic{width:42px;height:42px;flex:none;border-radius:12px;background:rgba(255,255,255,.16);
+            display:flex;align-items:center;justify-content:center;font-size:20px;backdrop-filter:blur(4px)}
+        .brand-points .pt b{display:block;font-size:15px;margin-bottom:4px}
+        .brand-points .pt small{font-size:13px;color:rgba(255,255,255,.72);line-height:1.6}
+        .brand-foot{position:absolute;bottom:26px;left:0;right:0;text-align:center;color:rgba(255,255,255,.55);font-size:12px;z-index:2}
+        .login-panel{flex:1;display:flex;justify-content:center;align-items:center;padding:32px;position:relative}
+        .login-card{width:430px;max-width:100%;max-height:calc(100vh - 48px);overflow-y:auto;overscroll-behavior:contain;
+            padding:34px 40px;background:rgba(255,255,255,.72);
+            -webkit-backdrop-filter:blur(14px) saturate(160%);backdrop-filter:blur(14px) saturate(160%);
+            border:1px solid rgba(255,255,255,.6);border-radius:18px;
+            box-shadow:0 1px 2px rgba(60,64,67,.18),0 8px 32px 4px rgba(60,64,67,.14);
+            animation:card-in .6s cubic-bezier(.22,1,.36,1) both}
+        @keyframes card-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+        .login-card-head{display:flex;flex-direction:column;align-items:center;gap:12px;margin-bottom:8px}
+        .login-card-head .brand-logo{margin-bottom:0}
+        .login-card-head .brand-logo .dot{width:14px;height:14px}
+        .login-card-head h1{font-size:22px;color:#202124;letter-spacing:1px}
+        .login-card .el-tabs__item.is-active{color:#1a73e8}
+        .login-card .el-tabs__active-bar{background:#1a73e8}
+        .login-card .inp-icon{width:16px;height:16px;fill:#9aa0a6}
+        .login-card .el-button--primary{background:linear-gradient(135deg,#1a73e8,#7c4dff);border:none;
+            box-shadow:0 2px 10px rgba(26,115,232,.32);transition:all .25s}
+        .login-card .el-button--primary:hover:not(.is-disabled){transform:translateY(-1px);
+            box-shadow:0 6px 20px rgba(26,115,232,.45)}
+        .login-card .el-button--success{background:linear-gradient(135deg,#34a853,#0f9d58);border:none;
+            box-shadow:0 2px 10px rgba(52,168,83,.32);transition:all .25s}
+        .login-card .el-button--success:hover:not(.is-disabled){transform:translateY(-1px);
+            box-shadow:0 6px 20px rgba(52,168,83,.45)}
+        .login-card .test-tip{margin-top:6px;padding:8px 0;border-top:1px dashed #e5e7eb;text-align:center;color:#9aa0a6;font-size:12px;line-height:1.8}
+        @media (max-width:960px){.login-brand{display:none}.login-panel{background:linear-gradient(135deg,#1a73e8 0%,#7c4dff 100%)}}
         .main-header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
         .main-header h2{font-size:18px;color:#303133}
         .main-layout{display:flex;min-height:calc(100vh - 56px)}
@@ -1678,54 +1723,85 @@ const StudentHomeworks = defineComponent({
 const LoginView = defineComponent({
     template: `
         <div class="login-container">
-            <div class="login-card">
-                <h1>📚 在线作业系统</h1>
-                <el-tabs v-model="tab" stretch>
-                    <el-tab-pane label="登 录" name="login">
-                        <el-form :model="form" :rules="rules" ref="formRef">
-                            <el-form-item prop="username">
-                                <el-input v-model="form.username" placeholder="用户名" size="large" clearable/>
-                            </el-form-item>
-                            <el-form-item prop="password">
-                                <el-input v-model="form.password" placeholder="密码" type="password" size="large" show-password @keyup.enter="doLogin"/>
-                            </el-form-item>
-                            <el-form-item>
-                                <el-button type="primary" size="large" style="width:100%" @click="doLogin" :loading="loading">登 录</el-button>
-                            </el-form-item>
-                        </el-form>
-                        <div style="text-align:center;color:#909399;font-size:12px">
-                            测试账号：admin / T2024001 / 20240001<br>密码统一：Admin123456
-                        </div>
-                    </el-tab-pane>
-                    <el-tab-pane label="注 册" name="register">
-                        <el-form :model="regForm" :rules="regRules" ref="regFormRef">
-                            <el-form-item prop="username">
-                                <el-input v-model="regForm.username" placeholder="用户名（3-20位字母/数字/下划线）" size="large" clearable/>
-                            </el-form-item>
-                            <el-form-item prop="email">
-                                <el-input v-model="regForm.email" placeholder="邮箱（用于接收验证码）" size="large" clearable/>
-                            </el-form-item>
-                            <el-form-item prop="code">
-                                <div style="display:flex;width:100%;gap:8px">
-                                    <el-input v-model="regForm.code" placeholder="邮箱验证码" size="large" style="flex:1"/>
-                                    <el-button size="large" :disabled="countdown > 0 || regSending" @click="sendCode" style="width:140px">
-                                        {{ countdown > 0 ? countdown + 's 后重发' : '获取验证码' }}
-                                    </el-button>
-                                </div>
-                            </el-form-item>
-                            <el-form-item prop="password">
-                                <el-input v-model="regForm.password" placeholder="密码（至少8位，含大小写字母和数字）" type="password" size="large" show-password/>
-                            </el-form-item>
-                            <el-form-item prop="confirm">
-                                <el-input v-model="regForm.confirm" placeholder="确认密码" type="password" size="large" show-password/>
-                            </el-form-item>
-                            <el-form-item>
-                                <el-button type="success" size="large" style="width:100%" @click="doRegister" :loading="regLoading">注 册</el-button>
-                            </el-form-item>
-                        </el-form>
-                        <div style="text-align:center;color:#909399;font-size:12px">注册成功后将自动开通学生账号，可直接登录</div>
-                    </el-tab-pane>
-                </el-tabs>
+            <div class="login-brand">
+                <canvas id="particleCanvas" class="brand-canvas"></canvas>
+                <div class="brand-content">
+                    <div class="brand-logo"><span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span><span class="dot d4"></span></div>
+                    <h1>在线作业系统</h1>
+                    <p class="brand-slogan">面向高校课堂的作业全流程管理平台<br>布置、作答、判分、统计一站式完成</p>
+                    <div class="brand-points">
+                        <div class="pt"><span class="ic">📝</span><div><b>多题型在线作答</b><small>单选、多选、判断、问答与应用题，支持公式、代码与图表</small></div></div>
+                        <div class="pt"><span class="ic">🤖</span><div><b>AI 辅助出题</b><small>上传课程材料自动生成题目草稿，教师审核后一键入库</small></div></div>
+                        <div class="pt"><span class="ic">📊</span><div><b>完整教学闭环</b><small>教学班级管理、在线评分、成绩统计与导出</small></div></div>
+                    </div>
+                </div>
+                <div class="brand-foot">湘潭大学 · 软件设计实践课程项目</div>
+            </div>
+            <div class="login-panel">
+                <div class="login-card">
+                    <div class="login-card-head">
+                        <div class="brand-logo"><span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span><span class="dot d4"></span></div>
+                        <h1>在线作业系统</h1>
+                    </div>
+                    <el-tabs v-model="tab" stretch>
+                        <el-tab-pane label="登 录" name="login">
+                            <el-form :model="form" :rules="rules" ref="formRef">
+                                <el-form-item prop="username">
+                                    <el-input v-model="form.username" placeholder="用户名" size="large" clearable>
+                                        <template #prefix><svg class="inp-icon" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></template>
+                                    </el-input>
+                                </el-form-item>
+                                <el-form-item prop="password">
+                                    <el-input v-model="form.password" placeholder="密码" type="password" size="large" show-password @keyup.enter="doLogin">
+                                        <template #prefix><svg class="inp-icon" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg></template>
+                                    </el-input>
+                                </el-form-item>
+                                <el-form-item>
+                                    <el-button type="primary" size="large" style="width:100%" @click="doLogin" :loading="loading">登 录</el-button>
+                                </el-form-item>
+                            </el-form>
+                            <div class="test-tip">测试账号 admin / T2024001 / 20240001<br>密码统一 Admin123456（首次登录需修改）</div>
+                        </el-tab-pane>
+                        <el-tab-pane label="注 册" name="register">
+                            <el-form :model="regForm" :rules="regRules" ref="regFormRef">
+                                <el-form-item prop="username">
+                                    <el-input v-model="regForm.username" placeholder="用户名（3-20位字母/数字/下划线）" size="large" clearable>
+                                        <template #prefix><svg class="inp-icon" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></template>
+                                    </el-input>
+                                </el-form-item>
+                                <el-form-item prop="email">
+                                    <el-input v-model="regForm.email" placeholder="邮箱（用于接收验证码）" size="large" clearable>
+                                        <template #prefix><svg class="inp-icon" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg></template>
+                                    </el-input>
+                                </el-form-item>
+                                <el-form-item prop="code">
+                                    <div style="display:flex;width:100%;gap:8px">
+                                        <el-input v-model="regForm.code" placeholder="邮箱验证码" size="large" style="flex:1">
+                                            <template #prefix><svg class="inp-icon" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg></template>
+                                        </el-input>
+                                        <el-button size="large" :disabled="countdown > 0 || regSending" @click="sendCode" style="width:140px">
+                                            {{ countdown > 0 ? countdown + 's 后重发' : '获取验证码' }}
+                                        </el-button>
+                                    </div>
+                                </el-form-item>
+                                <el-form-item prop="password">
+                                    <el-input v-model="regForm.password" placeholder="密码（至少8位，含大小写字母和数字）" type="password" size="large" show-password>
+                                        <template #prefix><svg class="inp-icon" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg></template>
+                                    </el-input>
+                                </el-form-item>
+                                <el-form-item prop="confirm">
+                                    <el-input v-model="regForm.confirm" placeholder="确认密码" type="password" size="large" show-password>
+                                        <template #prefix><svg class="inp-icon" viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg></template>
+                                    </el-input>
+                                </el-form-item>
+                                <el-form-item>
+                                    <el-button type="success" size="large" style="width:100%" @click="doRegister" :loading="regLoading">注 册</el-button>
+                                </el-form-item>
+                            </el-form>
+                            <div style="text-align:center;color:#909399;font-size:12px">注册成功后将自动开通学生账号，可直接登录</div>
+                        </el-tab-pane>
+                    </el-tabs>
+                </div>
             </div>
         </div>`,
     setup() {
