@@ -95,8 +95,19 @@
             box-shadow:0 6px 20px rgba(52,168,83,.45)}
         .login-card .test-tip{margin-top:6px;padding:8px 0;border-top:1px dashed #e5e7eb;text-align:center;color:#9aa0a6;font-size:12px;line-height:1.8}
         @media (max-width:960px){.login-brand{display:none}.login-panel{background:linear-gradient(135deg,#1a73e8 0%,#7c4dff 100%)}}
-        .main-header{display:flex;align-items:center;justify-content:flex-end;padding:10px 24px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-        .main-layout{display:flex;min-height:calc(100vh - 56px)}
+        .main-layout{display:flex;min-height:100vh}
+        .content{padding:20px 24px;flex:1;overflow-y:auto}
+        .content-top{display:flex;align-items:center;justify-content:space-between;margin-top:-12px;margin-bottom:16px;min-height:36px}
+        .breadcrumb{display:flex;align-items:center;gap:8px;font-size:14px;color:#5f6368}
+        .crumb-icon{width:16px;height:16px;color:#1a73e8}
+        .crumb-home{color:#1a73e8;cursor:pointer;font-weight:500}
+        .crumb-home:hover{text-decoration:underline}
+        .breadcrumb .sep{color:#c0c4cc;user-select:none}
+        .breadcrumb .cur{color:#202124;font-weight:600}
+        .user-chip{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 10px 4px 6px;border-radius:24px;transition:background .2s;outline:none}
+        .user-chip:hover{background:rgba(0,0,0,.05)}
+        .avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1a73e8 0%,#7c4dff 100%);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex:none}
+        .user-name{font-size:14px;color:#202124;font-weight:500}
         .sidebar{width:220px;flex:none;background:transparent;color:#333;padding:8px 0 12px;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden}
         .sidebar.collapsed{width:64px}
         .sidebar-top{display:flex;align-items:center;gap:8px;padding:0 8px 10px}
@@ -121,7 +132,6 @@
         .sidebar.collapsed .el-sub-menu__title{justify-content:center;padding:0 !important}
         .sidebar.collapsed .menu-text{display:none !important}
         .sidebar.collapsed .el-sub-menu__icon-arrow{display:none}
-        .content{padding:20px;flex:1;overflow-y:auto}
         .stat-cards{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}
         .stat-card{flex:1;min-width:150px;padding:20px 20px 18px;border-radius:12px;color:#fff;text-align:left;box-shadow:0 4px 14px rgba(0,0,0,.12);cursor:pointer;transition:transform .2s,box-shadow .2s;position:relative;overflow:hidden}
         .stat-card:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(0,0,0,.18)}
@@ -1907,15 +1917,6 @@ const LoginView = defineComponent({
 const MainLayout = defineComponent({
     template: `
         <div>
-            <div class="main-header">
-                <div>
-                    <span style="color:#606266;margin-right:16px">{{ userInfo.realName || userInfo.username }}
-                        <el-tag size="small" :type="roleTag">{{ roleLabel }}</el-tag>
-                    </span>
-                    <el-button size="small" @click="openProfile">🧑‍💼 个人中心</el-button>
-                    <el-button size="small" @click="logout">退出登录</el-button>
-                </div>
-            </div>
             <div class="main-layout">
                 <div class="sidebar" :class="{collapsed}">
                     <div class="sidebar-top">
@@ -1975,6 +1976,29 @@ const MainLayout = defineComponent({
                     </el-menu>
                 </div>
                 <div class="content">
+                    <div class="content-top">
+                        <div class="breadcrumb">
+                            <svg class="crumb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 10.5L12 3l9 7.5"></path>
+                                <path d="M5 9.5V21h14V9.5"></path>
+                            </svg>
+                            <span class="crumb-home" @click="$router.push('/dashboard')">首页</span>
+                            <span class="sep">/</span>
+                            <span class="cur">{{ currentPage }}</span>
+                        </div>
+                        <el-dropdown @command="onUserCommand" trigger="click">
+                            <div class="user-chip">
+                                <div class="avatar">{{ avatarChar }}</div>
+                                <span class="user-name">{{ displayName }}</span>
+                            </div>
+                            <template #dropdown>
+                                <el-dropdown-menu>
+                                    <el-dropdown-item command="profile">🧑‍💼 个人中心</el-dropdown-item>
+                                    <el-dropdown-item command="logout" divided>🚪 退出登录</el-dropdown-item>
+                                </el-dropdown-menu>
+                            </template>
+                        </el-dropdown>
+                    </div>
                     <router-view @viewGrading="goGrading"></router-view>
                 </div>
             </div>
@@ -2016,6 +2040,12 @@ const MainLayout = defineComponent({
         const goGrading = () => { router.push('/grading') }
         // 侧边导航折叠
         const collapsed = ref(false)
+        // 面包屑 + 头像昵称
+        const PAGE_NAMES = {'/dashboard':'首页统计','/teachers':'教师管理','/students':'学生管理','/classes':'班级管理','/tcAdmin':'教学班管理','/knowledge':'知识点管理','/questions':'题库管理','/teachingClasses':'教学班管理','/myHomeworks':'作业管理','/assignHw':'布置作业','/grading':'批改作业','/myHw':'我的作业'}
+        const currentPage = computed(() => PAGE_NAMES[route.path] || '')
+        const displayName = computed(() => userInfo.realName || userInfo.username || '系统管理员')
+        const avatarChar = computed(() => (displayName.value || '系')[0])
+        const onUserCommand = (cmd) => { if (cmd === 'profile') openProfile(); else if (cmd === 'logout') logout() }
         // 个人中心
         const profileVisible = ref(false), profileTab = ref('info')
         const forcePwd = ref(false)
@@ -2056,7 +2086,7 @@ const MainLayout = defineComponent({
                 $m('密码修改成功')
             } catch(e) { $m(e.response?.data?.msg||'修改失败','error') }
         }
-        return { userInfo, role, roleTag, roleLabel, route, logout, goGrading, collapsed, profileVisible, profileTab, forcePwd, profileForm, pwdForm, openProfile, saveProfile, savePwd }
+        return { userInfo, role, roleTag, roleLabel, route, logout, goGrading, collapsed, currentPage, displayName, avatarChar, onUserCommand, profileVisible, profileTab, forcePwd, profileForm, pwdForm, openProfile, saveProfile, savePwd }
     }
 })
 
