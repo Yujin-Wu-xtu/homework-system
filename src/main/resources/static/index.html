@@ -98,10 +98,16 @@
         .main-header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
         .main-header h2{font-size:18px;color:#303133}
         .main-layout{display:flex;min-height:calc(100vh - 56px)}
-        .sidebar{width:220px;background:#304156;color:#fff;padding:12px 0}
+        .sidebar{width:220px;flex:none;background:#304156;color:#fff;padding:8px 0 12px;transition:width .25s;overflow:hidden}
+        .sidebar.collapsed{width:64px}
         .sidebar .el-menu{background:transparent;border:none}
         .sidebar .el-menu-item{color:#bfcbd9}
         .sidebar .el-menu-item:hover,.sidebar .el-menu-item.is-active{background:#263445;color:#409eff}
+        .sidebar .el-sub-menu .el-sub-menu__title{color:#bfcbd9}
+        .sidebar .el-sub-menu .el-sub-menu__title:hover{background:#263445;color:#fff}
+        .sidebar .el-sub-menu .el-menu-item{min-width:auto}
+        .sidebar-toggle{display:flex;align-items:center;justify-content:center;height:40px;margin:0 8px 6px;color:#a3b1cc;cursor:pointer;border-radius:6px;font-size:16px;transition:background .2s;white-space:nowrap}
+        .sidebar-toggle:hover{background:#263445;color:#fff}
         .content{padding:20px;flex:1;overflow-y:auto}
         .stat-cards{display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap}
         .stat-card{flex:1;min-width:150px;padding:20px 20px 18px;border-radius:12px;color:#fff;text-align:left;box-shadow:0 4px 14px rgba(0,0,0,.12);cursor:pointer;transition:transform .2s,box-shadow .2s;position:relative;overflow:hidden}
@@ -1899,16 +1905,27 @@ const MainLayout = defineComponent({
                 </div>
             </div>
             <div class="main-layout">
-                <div class="sidebar">
-                    <el-menu :default-active="route.path" router text-color="#bfcbd9" active-text-color="#409eff">
+                <div class="sidebar" :class="{collapsed}">
+                    <div class="sidebar-toggle" @click="collapsed = !collapsed" :title="collapsed ? '展开菜单' : '折叠菜单'">{{ collapsed ? '📖 展开' : '📕 折叠' }}</div>
+                    <el-menu :default-active="route.path" router text-color="#bfcbd9" active-text-color="#409eff"
+                             :collapse="collapsed" :collapse-transition="false" :default-openeds="['g-console','g-org','g-resource']">
                         <template v-if="role==='ADMIN'">
-                            <el-menu-item index="/dashboard"><span>📊</span> 首页统计</el-menu-item>
-                            <el-menu-item index="/teachers"><span>👤</span> 教师管理</el-menu-item>
-                            <el-menu-item index="/classes"><span>🏫</span> 班级管理</el-menu-item>
-                            <el-menu-item index="/students"><span>👨‍🎓</span> 学生管理</el-menu-item>
-                            <el-menu-item index="/questions"><span>✏️</span> 题库管理</el-menu-item>
-                            <el-menu-item index="/knowledge"><span>📂</span> 知识点管理</el-menu-item>
-                            <el-menu-item index="/tcAdmin"><span>🏫</span> 教学班管理</el-menu-item>
+                            <el-sub-menu index="g-console">
+                                <template #title><span>📊</span> 控制台</template>
+                                <el-menu-item index="/dashboard">首页统计</el-menu-item>
+                            </el-sub-menu>
+                            <el-sub-menu index="g-org">
+                                <template #title><span>👥</span> 人员与组织</template>
+                                <el-menu-item index="/teachers">教师管理</el-menu-item>
+                                <el-menu-item index="/students">学生管理</el-menu-item>
+                                <el-menu-item index="/classes">班级管理</el-menu-item>
+                                <el-menu-item index="/tcAdmin">教学班管理</el-menu-item>
+                            </el-sub-menu>
+                            <el-sub-menu index="g-resource">
+                                <template #title><span>📚</span> 教学资源</template>
+                                <el-menu-item index="/knowledge">知识点管理</el-menu-item>
+                                <el-menu-item index="/questions">题库管理</el-menu-item>
+                            </el-sub-menu>
                         </template>
                         <template v-if="role==='TEACHER'">
                             <el-menu-item index="/teachingClasses"><span>🏫</span> 教学班管理</el-menu-item>
@@ -1961,6 +1978,8 @@ const MainLayout = defineComponent({
         const roleLabel = computed(() => ({ADMIN:'管理员',TEACHER:'教师',STUDENT:'学生'}[role.value]||''))
         const logout = () => { localStorage.clear(); router.push('/login') }
         const goGrading = () => { router.push('/grading') }
+        // 侧边导航折叠
+        const collapsed = ref(false)
         // 个人中心
         const profileVisible = ref(false), profileTab = ref('info')
         const forcePwd = ref(false)
@@ -2001,7 +2020,7 @@ const MainLayout = defineComponent({
                 $m('密码修改成功')
             } catch(e) { $m(e.response?.data?.msg||'修改失败','error') }
         }
-        return { userInfo, role, roleTag, roleLabel, route, logout, goGrading, profileVisible, profileTab, forcePwd, profileForm, pwdForm, openProfile, saveProfile, savePwd }
+        return { userInfo, role, roleTag, roleLabel, route, logout, goGrading, collapsed, profileVisible, profileTab, forcePwd, profileForm, pwdForm, openProfile, saveProfile, savePwd }
     }
 })
 
