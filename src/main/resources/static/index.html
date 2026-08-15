@@ -97,14 +97,14 @@
         @media (max-width:960px){.login-brand{display:none}.login-panel{background:linear-gradient(135deg,#1a73e8 0%,#7c4dff 100%)}}
         .main-header{display:flex;align-items:center;justify-content:flex-end;padding:10px 24px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
         .main-layout{display:flex;min-height:calc(100vh - 56px)}
-        .sidebar{width:220px;flex:none;background:#304156;color:#fff;padding:8px 0 12px;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden}
+        .sidebar{width:220px;flex:none;background:transparent;color:#333;padding:8px 0 12px;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden;border-right:1px solid rgba(0,0,0,.06)}
         .sidebar.collapsed{width:64px}
         .sidebar-top{display:flex;align-items:center;gap:8px;padding:0 8px 10px}
-        .brand-inline{display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;color:#fff}
+        .brand-inline{display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;color:#202124}
         .brand-inline .sys-logo{width:24px;height:24px;flex:none}
-        .brand-title{font-size:15px;font-weight:600;white-space:nowrap;color:#e6e9f0;letter-spacing:1px}
-        .sidebar-toggle{display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex:none;border-radius:50%;color:#a3b1cc;cursor:pointer;transition:background .2s,color .2s}
-        .sidebar-toggle:hover{background:rgba(255,255,255,.1);color:#fff}
+        .brand-title{font-size:15px;font-weight:600;white-space:nowrap;color:#202124;letter-spacing:1px}
+        .sidebar-toggle{display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex:none;border-radius:50%;color:#5f6368;cursor:pointer;transition:background .2s,color .2s}
+        .sidebar-toggle:hover{background:rgba(0,0,0,.06);color:#1a73e8}
         .toggle-icon{width:20px;height:20px;display:block}
         .toggle-arrow{transform-box:fill-box;transform-origin:center;opacity:0;transform:translateX(3px);transition:opacity .2s ease-in-out,transform .25s ease-in-out}
         .sidebar-toggle:hover .toggle-arrow{opacity:1;transform:translateX(0)}
@@ -113,10 +113,10 @@
         .sidebar.collapsed .brand-inline{display:none}
         .sidebar.collapsed .sidebar-top{justify-content:center;padding:0 0 10px}
         .sidebar .el-menu{background:transparent;border:none}
-        .sidebar .el-menu-item{color:#bfcbd9}
-        .sidebar .el-menu-item:hover,.sidebar .el-menu-item.is-active{background:#263445;color:#409eff}
-        .sidebar .el-sub-menu .el-sub-menu__title{color:#bfcbd9;display:flex;align-items:center}
-        .sidebar .el-sub-menu .el-sub-menu__title:hover{background:#263445;color:#fff}
+        .sidebar .el-menu-item{color:#5f6368}
+        .sidebar .el-menu-item:hover,.sidebar .el-menu-item.is-active{background:rgba(26,115,232,.08);color:#1a73e8}
+        .sidebar .el-sub-menu .el-sub-menu__title{color:#5f6368;display:flex;align-items:center}
+        .sidebar .el-sub-menu .el-sub-menu__title:hover{background:rgba(26,115,232,.08);color:#1a73e8}
         .sidebar .el-sub-menu .el-menu-item{min-width:auto}
         .sidebar.collapsed .el-sub-menu__title{justify-content:center;padding:0 !important}
         .sidebar.collapsed .menu-text{display:none !important}
@@ -1935,15 +1935,15 @@ const MainLayout = defineComponent({
                         </div>
                         <el-tooltip :content="collapsed ? '展开菜单' : '收起菜单'" placement="right" :show-after="300">
                             <div class="sidebar-toggle" :class="{flipped: collapsed}" @click="collapsed = !collapsed">
-                                <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-                                    <line class="toggle-bar" x1="9" y1="4" x2="9" y2="20"></line>
-                                    <path class="toggle-arrow" d="M9.5 9.5 L12.5 12 L9.5 14.5"></path>
+                                <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="4" width="18" height="16" rx="2" stroke-width="2"></rect>
+                                    <line class="toggle-bar" x1="9" y1="4" x2="9" y2="20" stroke-width="2"></line>
+                                    <path class="toggle-arrow" d="M10.5 8.5 L15 12 L10.5 15.5"></path>
                                 </svg>
                             </div>
                         </el-tooltip>
                     </div>
-                    <el-menu :default-active="route.path" router text-color="#bfcbd9" active-text-color="#409eff"
+                    <el-menu :default-active="route.path" router text-color="#5f6368" active-text-color="#1a73e8"
                              :collapse="collapsed" :collapse-transition="false" :default-openeds="['g-console','g-org','g-resource']">
                         <template v-if="role==='ADMIN'">
                             <el-sub-menu index="g-console">
