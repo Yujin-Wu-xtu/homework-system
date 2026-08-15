@@ -1965,13 +1965,13 @@ const MainLayout = defineComponent({
                             </el-sub-menu>
                         </template>
                         <template v-if="role==='TEACHER'">
-                            <el-menu-item index="/teachingClasses"><span>🏫</span> 教学班管理</el-menu-item>
-                            <el-menu-item index="/myHomeworks"><span>📄</span> 作业管理</el-menu-item>
-                            <el-menu-item index="/assignHw"><span>📝</span> 布置作业</el-menu-item>
-                            <el-menu-item index="/grading"><span>✅</span> 批改作业</el-menu-item>
+                            <el-menu-item index="/teachingClasses">🏫<span class="menu-text">教学班管理</span></el-menu-item>
+                            <el-menu-item index="/myHomeworks">📄<span class="menu-text">作业管理</span></el-menu-item>
+                            <el-menu-item index="/assignHw">📝<span class="menu-text">布置作业</span></el-menu-item>
+                            <el-menu-item index="/grading">✅<span class="menu-text">批改作业</span></el-menu-item>
                         </template>
                         <template v-if="role==='STUDENT'">
-                            <el-menu-item index="/myHw"><span>📓</span> 我的作业</el-menu-item>
+                            <el-menu-item index="/myHw">📓<span class="menu-text">我的作业</span></el-menu-item>
                         </template>
                     </el-menu>
                 </div>
