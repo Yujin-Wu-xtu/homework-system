@@ -445,15 +445,6 @@ public class AdminController {
                 body.get("content"), body.get("type")));
     }
 
-    @PostMapping("/questions/import")
-    public R importQuestions(@RequestParam("file") MultipartFile file) {
-        try {
-            return R.ok().data(questionService.importQuestionsFromExcel(file));
-        } catch (Exception e) {
-            return R.badRequest("导入失败: " + e.getMessage());
-        }
-    }
-
     // ---- AI 出题（大模型生成题目草稿，管理员预览审核后走常规新增入库）----
     // 资源文件存储目录（data/ 已在 .gitignore，不入版本库）；用 user.dir 拼绝对路径，避免相对路径解析到 Tomcat 临时目录
     private static final String AI_MATERIAL_DIR =

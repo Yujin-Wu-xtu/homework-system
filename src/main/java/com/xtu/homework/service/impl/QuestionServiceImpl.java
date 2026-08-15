@@ -7,13 +7,9 @@ import com.xtu.homework.dao.*;
 import com.xtu.homework.entity.*;
 import com.xtu.homework.service.QuestionService;
 import lombok.RequiredArgsConstructor;
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.InputStream;
 import java.math.BigDecimal;
 import java.util.*;
 
@@ -126,130 +122,6 @@ public class QuestionServiceImpl extends ServiceImpl<QuestionDao, Question>
             }
         }
         return success;
-    }
-
-    @Override
-    @Transactional
-    public Map<String, Object> importQuestionsFromExcel(MultipartFile file) {
-        int imported = 0, failed = 0;
-        List<Map<String, Object>> duplicates = new ArrayList<>();
-        List<String> errors = new ArrayList<>();
-        try (InputStream is = file.getInputStream();
-             Workbook wb = new XSSFWorkbook(is)) {
-            Sheet sheet = wb.getSheetAt(0);
-            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
-                Row row = sheet.getRow(i);
-                if (row == null) continue;
-                String typeStr = getCellString(row.getCell(0));
-                String content = getCellString(row.getCell(1));
-                if (typeStr == null || typeStr.isBlank() || content == null || content.isBlank()) {
-                    continue; // 跳过空行
-                }
-                try {
-                    String type = parseType(typeStr);
-                    String correctAnswer = parseCorrectAnswer(getCellString(row.getCell(6)), type);
-                    String difficulty = parseDifficulty(getCellString(row.getCell(7)));
-                    BigDecimal score = parseScore(getCellString(row.getCell(8)));
-
-                    // 查重：同题型 + 内容相似度 >= 0.8 视为重复，跳过并提示
-                    List<Question> dup = checkDuplicate(content, type);
-                    if (!dup.isEmpty()) {
-                        Map<String, Object> m = new HashMap<>();
-                        m.put("row", i + 1);
-                        m.put("content", content.length() > 30 ? content.substring(0, 30) + "…" : content);
-                        m.put("matchId", dup.get(0).getId());
-                        duplicates.add(m);
-                        continue;
-                    }
-
-                    Question q = new Question();
-                    q.setType(type);
-                    q.setContent(content);
-                    q.setCorrectAnswer(correctAnswer);
-                    q.setReferenceAnswer("ESSAY".equals(type) ? getCellString(row.getCell(6)) : null);
-                    q.setDifficulty(difficulty);
-                    q.setScore(score);
-                    q.setStatus("ACTIVE");
-                    q.setCreatorId(1L); // admin
-                    questionDao.insert(q);
-
-                    // 选择题解析选项 A-D
-                    if ("SINGLE_CHOICE".equals(type) || "MULTI_CHOICE".equals(type)) {
-                        for (int c = 2; c <= 5; c++) {
-                            String optContent = getCellString(row.getCell(c));
-                            if (optContent == null || optContent.isBlank()) continue;
-                            QuestionOption opt = new QuestionOption();
-                            opt.setQuestionId(q.getId());
-                            opt.setLabel(String.valueOf((char) ('A' + (c - 2))));
-                            opt.setContent(optContent);
-                            opt.setSortOrder(c - 2);
-                            questionOptionDao.insert(opt);
-                        }
-                    }
-                    imported++;
-                } catch (Exception e) {
-                    failed++;
-                    errors.add("第" + (i + 1) + "行: " + e.getMessage());
-                }
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Excel解析失败: " + e.getMessage());
-        }
-        Map<String, Object> result = new HashMap<>();
-        result.put("imported", imported);
-        result.put("failed", failed);
-        result.put("duplicates", duplicates);
-        result.put("errors", errors);
-        return result;
-    }
-
-    /** 题型文本 → 枚举：单选题/单选 → SINGLE_CHOICE，多选 → MULTI_CHOICE，判断 → TRUE_FALSE，问答/简答 → ESSAY */
-    private String parseType(String s) {
-        String t = s.trim();
-        if (t.contains("多选")) return "MULTI_CHOICE";
-        if (t.contains("判断") || t.contains("对错")) return "TRUE_FALSE";
-        if (t.contains("问答") || t.contains("简答") || t.contains("主观")) return "ESSAY";
-        return "SINGLE_CHOICE";
-    }
-
-    /** 客观题答案规范化：判断题 对/错/T/F/true/false → 对/错；单选多选保留原样 */
-    private String parseCorrectAnswer(String s, String type) {
-        if (s == null || s.isBlank()) {
-            if ("ESSAY".equals(type)) return null;
-            throw new RuntimeException("客观题缺少标准答案");
-        }
-        String ans = s.trim();
-        if ("TRUE_FALSE".equals(type)) {
-            if (ans.equalsIgnoreCase("T") || ans.equalsIgnoreCase("TRUE")
-                    || ans.equals("正确") || ans.equals("对") || ans.equals("√")) return "对";
-            if (ans.equalsIgnoreCase("F") || ans.equalsIgnoreCase("FALSE")
-                    || ans.equals("错误") || ans.equals("错") || ans.equals("×")) return "错";
-            throw new RuntimeException("判断题答案只能填 对/错");
-        }
-        return ans.toUpperCase();
-    }
-
-    private String parseDifficulty(String s) {
-        if (s == null || s.isBlank()) return "MEDIUM";
-        String d = s.trim();
-        if (d.contains("简") || d.contains("易") || d.equalsIgnoreCase("EASY")) return "EASY";
-        if (d.contains("难") || d.equalsIgnoreCase("HARD")) return "HARD";
-        return "MEDIUM";
-    }
-
-    private BigDecimal parseScore(String s) {
-        if (s == null || s.isBlank()) return BigDecimal.valueOf(5);
-        return BigDecimal.valueOf(Double.parseDouble(s.trim()));
-    }
-
-    private String getCellString(Cell cell) {
-        if (cell == null) return null;
-        return switch (cell.getCellType()) {
-            case STRING -> cell.getStringCellValue().trim();
-            case NUMERIC -> String.valueOf((long) cell.getNumericCellValue());
-            case BOOLEAN -> String.valueOf(cell.getBooleanCellValue());
-            default -> null;
-        };
     }
 
     @Override

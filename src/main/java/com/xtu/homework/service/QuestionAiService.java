@@ -76,13 +76,18 @@ public class QuestionAiService {
         } else {
             example = "{\"type\":\"SINGLE_CHOICE\",\"content\":\"题干\",\"options\":[{\"label\":\"A\",\"content\":\"选项\"},{\"label\":\"B\",\"content\":\"选项\"},{\"label\":\"C\",\"content\":\"选项\"},{\"label\":\"D\",\"content\":\"选项\"}],\"correctAnswer\":\"B\",\"knowledgePoint\":\"知识点\",\"difficulty\":\"MEDIUM\"}";
         }
-        return "你是一位课程出题专家。请根据用户提供的课程材料，生成 " + count + " 道" + typeDesc + "，难度" + difficultyText + "。\n"
-                + "要求：\n"
-                + "1. 题目必须基于材料内容，覆盖不同知识点，不得编造材料中没有的概念；\n"
-                + "2. 题干表述完整清晰，适合考试场景；\n"
-                + "3. 选择题选项 4 个（标签 A/B/C/D），正确项随机分布；判断题答案只填 对 或 错；问答题参考答案要点化；\n"
-                + "4. knowledgePoint 填材料中对应的知识点名称（简洁，3-8 字）；difficulty 填 EASY/MEDIUM/HARD；\n"
-                + "5. 严格按 JSON 输出，不要输出任何解释文字。格式：{\"questions\":[" + example + "]}";
+        return "你是一位课程出题专家。用户会提供一份文件内容，请先判断它的性质，再选择对应模式处理。\n"
+                + "【判断标准】内容中是否包含成体系的题目（出现题干、选项、答案、题号、\"1.\"\"2.\"编号等题目结构）。\n"
+                + "一、若包含题目结构，进入【整理模式】（文件本身就是题目）：\n"
+                + "1. 提取文件中全部题目，逐题规范化：题型按内容判断（单选/多选/判断/问答，多选须列出多个正确项）；\n"
+                + "2. 选择题选项统一整理为 4 个并标注 A/B/C/D，正确项给到 correctAnswer；判断题答案归一化为 对 或 错；问答题把文件中的解答/要点整理进 referenceAnswer；\n"
+                + "3. 缺失字段补默认值（difficulty 填 MEDIUM，knowledgePoint 按题目主题概括 3-8 字），不改变题目原意，不增删题目；\n"
+                + "4. 若文件同时含多种题型，每道题的 type 字段如实标注（不强制统一为所选题型），题目数量以文件实际为准。\n"
+                + "二、若内容为课件、讲义、知识点等学习材料（无题目结构），进入【出题模式】：\n"
+                + "1. 基于材料内容生成 " + count + " 道" + typeDesc + "，难度" + difficultyText + "，不得编造材料中没有的概念；\n"
+                + "2. 题干表述完整清晰，适合考试场景；选择题选项 4 个（标签 A/B/C/D），正确项随机分布；判断题答案只填 对 或 错；问答题参考答案要点化；\n"
+                + "3. knowledgePoint 填材料中对应的知识点名称（简洁，3-8 字）；difficulty 填 EASY/MEDIUM/HARD。\n"
+                + "两种模式都严格按 JSON 输出，不要输出任何解释文字。格式：{\"questions\":[" + example + "]}";
     }
 
     @SuppressWarnings("unchecked")
@@ -95,9 +100,10 @@ public class QuestionAiService {
                 throw new RuntimeException("AI 未能基于材料生成题目（返回空结果），请确认材料包含足够文字内容后重试");
             }
             List<Map<String, Object>> drafts = new ArrayList<>();
+            String defType = "ALL".equals(fallbackType) ? "ESSAY" : fallbackType; // 混合模式下缺 type 的题默认问答题
             for (JsonNode q : questions) {
                 Map<String, Object> m = new HashMap<>();
-                m.put("type", q.hasNonNull("type") ? normalizeType(q.get("type").asText(), fallbackType) : fallbackType);
+                m.put("type", q.hasNonNull("type") ? normalizeType(q.get("type").asText(), fallbackType) : defType);
                 m.put("content", q.hasNonNull("content") ? q.get("content").asText() : "");
                 m.put("correctAnswer", q.hasNonNull("correctAnswer") ? q.get("correctAnswer").asText() : "");
                 m.put("referenceAnswer", q.hasNonNull("referenceAnswer") ? q.get("referenceAnswer").asText() : "");

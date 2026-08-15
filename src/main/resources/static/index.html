@@ -234,7 +234,6 @@ const api = {
     questionKps: id => axios.get('/api/admin/questions/' + id + '/knowledge-points'),
     checkDuplicate: d => axios.post('/api/admin/questions/check-duplicate', d),
     toggleQuestion: id => axios.put('/api/admin/questions/' + id + '/status'),
-    importQuestions: file => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/questions/import', fd) },
     aiGenerate: d => axios.post('/api/admin/questions/ai-generate', d),
     aiGenerateFile: (file, p) => { const fd = new FormData(); fd.append('file', file); return axios.post('/api/admin/questions/ai-generate/file', fd, {params: p}) },
     // AI 出题资源文件管理
@@ -654,11 +653,8 @@ const AdminQuestions = defineComponent({
     template: `
         <div class="section-card"><h3>题库管理
             <el-button type="primary" size="small" @click="showAdd">新增题目</el-button>
-            <el-upload :show-file-list="false" :before-upload="f=>uploadQuestions(f)" accept=".xlsx" style="display:inline-block;margin-left:8px">
-                <el-button type="success" size="small">批量导入Excel</el-button>
-            </el-upload>
-            <el-button type="warning" size="small" style="margin-left:8px" @click="openAi">🤖 AI 生成</el-button>
-            <span style="color:#909399;font-size:12px;margin-left:8px">模板列：题型(单选/多选/判断/问答)、题干、选项A、选项B、选项C、选项D、答案(客观题必填，问答题填参考答案)、难度、分值</span>
+            <el-button type="warning" size="small" style="margin-left:8px" @click="openAi">📤 AI 导入/出题</el-button>
+            <span style="color:#909399;font-size:12px;margin-left:8px">上传文件（txt/md/docx/pdf）——文件里已是题目会自动整理，是课件内容会自动出题，生成草稿供审核后入库</span>
         </h3>
             <el-input v-model="keyword" placeholder="搜索题目" size="small" style="width:240px;margin-right:8px" clearable/>
             <el-select v-model="filterType" placeholder="题型" size="small" style="width:140px;margin-right:8px" clearable>
@@ -742,12 +738,12 @@ const AdminQuestions = defineComponent({
             <!-- AI 出题弹窗 -->
             <el-dialog title="🤖 AI 生成题目" v-model="aiVisible" width="880px">
                 <template v-if="!aiDrafts.length">
-                    <el-alert type="info" :closable="false" style="margin-bottom:10px" title="① 上传课程资源（上传成功后文件会保存到资源库，可反复使用）或粘贴文本；② 选择资源/文本后点「生成题目」，AI 生成草稿供你审核导入"/>
+                    <el-alert type="info" :closable="false" style="margin-bottom:10px" title="① 选择题目类型（混合=AI 按文件内容自由判断各题题型）；② 上传文件或粘贴文本，AI 自动判断——文件里已是题目则整理规范化，是课件/讲义内容则按所选类型出题；③ 生成草稿供你逐题审核后导入（导入自动查重）"/>
                     <div style="margin-bottom:8px">
                         <el-upload :show-file-list="false" :before-upload="f=>materialUpload(f)" accept=".txt,.md,.docx,.pdf" style="display:inline-block">
-                            <el-button type="primary" size="small">📤 上传课程资源（txt/md/docx/pdf）</el-button>
+                            <el-button type="primary" size="small">📤 上传文件（txt/md/docx/pdf）</el-button>
                         </el-upload>
-                        <span style="color:#909399;font-size:12px;margin-left:8px">上传成功后有提示，文件会出现在下方资源列表</span>
+                        <span style="color:#909399;font-size:12px;margin-left:8px">上传成功后会保存到资源库可反复使用；题目文件或课件均可</span>
                     </div>
                     <el-table :data="materials" border stripe size="small" max-height="180" style="margin-bottom:8px" @selection-change="rows=>{aiMaterialId = rows.length ? rows[0].id : null}">
                         <el-table-column type="selection" width="40"/>
@@ -954,23 +950,6 @@ const AdminQuestions = defineComponent({
                 }
             } catch(e) { $m(e.response?.data?.msg||'失败','error') }
         }
-        const uploadQuestions = file => {
-            api.importQuestions(file).then(r => {
-                const d = r.data.data
-                load()
-                if (d.duplicates?.length) {
-                    $m(`成功导入 ${d.imported} 道，跳过重复 ${d.duplicates.length} 道${d.failed?`，失败 ${d.failed} 道`:''}`, 'warning')
-                    const lines = d.duplicates.slice(0,5).map(x=>`第${x.row}行「${x.content}」→ 与题目#${x.matchId}重复`).join('\n')
-                    ElementPlus.ElMessageBox.alert(`以下题目与题库重复，已自动跳过：\n${lines}${d.duplicates.length>5?`\n…共 ${d.duplicates.length} 道`:''}`, '导入查重结果')
-                } else if (d.failed) {
-                    $m(`成功导入 ${d.imported} 道，失败 ${d.failed} 道`, 'warning')
-                    ElementPlus.ElMessageBox.alert(d.errors.slice(0,5).join('\n'), '导入失败明细')
-                } else {
-                    $m(`成功导入 ${d.imported} 道题目`)
-                }
-            }).catch(e => $m(e.response?.data?.msg||'导入失败','error'))
-            return false
-        }
         // ========== AI 出题 ==========
         const aiVisible = ref(false), aiType = ref('ESSAY'), aiCount = ref(5), aiDifficulty = ref('MEDIUM')
         const aiMaterial = ref(''), aiDrafts = ref([]), aiLoading = ref(false), aiImporting = ref(false)
@@ -995,7 +974,7 @@ const AdminQuestions = defineComponent({
         }
         const aiRun = async () => {
             const hasMaterial = aiMaterialId.value != null
-            if (!hasMaterial && (!aiMaterial.value || !aiMaterial.value.trim())) return $m('请先选择资源文件或粘贴课程材料', 'error')
+            if (!hasMaterial && (!aiMaterial.value || !aiMaterial.value.trim())) return $m('请先上传文件或粘贴文本', 'error')
             aiLoading.value = true
             try {
                 const payload = { type: aiType.value, count: aiCount.value, difficulty: aiDifficulty.value }
@@ -1049,7 +1028,7 @@ const AdminQuestions = defineComponent({
             else $m(msg)
         }
         onMounted(async () => { load(); try { const r = await api.knowledgePoints(); kpList.value = r.data.data } catch(e) { console.error(e) } })
-        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, page, pageSize, total, load, search, onPageChange, onSizeChange, toggle, del, showAdd, edit, save, uploadQuestions,
+        return { list, keyword, filterType, filterDifficulty, TYPE_MAP, DIFF_MAP, dialogVisible, form, kpList, isEdit, page, pageSize, total, load, search, onPageChange, onSizeChange, toggle, del, showAdd, edit, save,
             editorBox, toolbarBox, initEditor, destroyEditor, chartVisible, chartForm, chartPreview, openChartDialog, insertChart,
             isObjective, isSubjective, stripHtml,
             aiVisible, aiType, aiCount, aiDifficulty, aiMaterial, aiDrafts, aiLoading, aiImporting, aiChecked, aiCheckAll, aiEditVisible, aiEditForm, materials, aiMaterialId, openAi, aiRun, materialUpload, materialDelete, aiEdit, aiImport }
