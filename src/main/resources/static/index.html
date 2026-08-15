@@ -97,7 +97,7 @@
         @media (max-width:960px){.login-brand{display:none}.login-panel{background:linear-gradient(135deg,#1a73e8 0%,#7c4dff 100%)}}
         .main-header{display:flex;align-items:center;justify-content:flex-end;padding:10px 24px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
         .main-layout{display:flex;min-height:calc(100vh - 56px)}
-        .sidebar{width:220px;flex:none;background:transparent;color:#333;padding:8px 0 12px;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden;border-right:1px solid rgba(0,0,0,.06)}
+        .sidebar{width:220px;flex:none;background:transparent;color:#333;padding:8px 0 12px;transition:width .25s cubic-bezier(.4,0,.2,1);overflow:hidden}
         .sidebar.collapsed{width:64px}
         .sidebar-top{display:flex;align-items:center;gap:8px;padding:0 8px 10px}
         .brand-inline{display:flex;align-items:center;gap:8px;flex:1;min-width:0;overflow:hidden;color:#202124}
@@ -1938,7 +1938,7 @@ const MainLayout = defineComponent({
                                 <svg class="toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                                     <rect x="3" y="4" width="18" height="16" rx="2" stroke-width="2"></rect>
                                     <line class="toggle-bar" x1="9" y1="4" x2="9" y2="20" stroke-width="2"></line>
-                                    <path class="toggle-arrow" d="M10.5 8.5 L15 12 L10.5 15.5"></path>
+                                    <path class="toggle-arrow" d="M16.5 8.5 L11.5 12 L16.5 15.5"></path>
                                 </svg>
                             </div>
                         </el-tooltip>
