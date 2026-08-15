@@ -106,10 +106,10 @@
         .sidebar .el-sub-menu .el-sub-menu__title{color:#bfcbd9;display:flex;align-items:center}
         .sidebar .el-sub-menu .el-sub-menu__title:hover{background:#263445;color:#fff}
         .sidebar .el-sub-menu .el-menu-item{min-width:auto}
-        .sidebar-toggle{display:flex;align-items:center;justify-content:flex-end;height:36px;margin:0 8px 8px;padding:0 10px;border-radius:8px;color:#a3b1cc;cursor:pointer;transition:background .2s}
-        .sidebar-toggle:hover{background:rgba(255,255,255,.08);color:#fff}
+        .sidebar-toggle{display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex:none;border-radius:50%;margin:4px 8px 10px auto;color:#a3b1cc;cursor:pointer;transition:background .2s,color .2s}
+        .sidebar-toggle:hover{background:rgba(255,255,255,.1);color:#fff}
         .toggle-icon{width:18px;height:18px;flex:none;transition:transform .25s cubic-bezier(.4,0,.2,1)}
-        .sidebar.collapsed .sidebar-toggle{justify-content:center;padding:0}
+        .sidebar.collapsed .sidebar-toggle{margin:4px auto 10px}
         .sidebar.collapsed .toggle-icon{transform:rotate(180deg)}
         .sidebar.collapsed .el-sub-menu__title{justify-content:center;padding:0 !important}
         .sidebar.collapsed .menu-text{display:none !important}
