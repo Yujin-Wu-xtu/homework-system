@@ -65,5 +65,5 @@ src/main/resources/static   # 前端页面（index.html + 本地化第三方库�
 
 ## 部署环境
 
-- 腾讯云 159.75.31.246，Docker 容器化部署（homework-app + homework-mysql）
-- 公网访问：http://159.75.31.246:8080
+- 腾讯云服务器，Docker 容器化部署（homework-app + homework-mysql）
+- 公网访问：http://<服务器公网IP>:8080（防火墙需放行 8080）
